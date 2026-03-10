@@ -848,12 +848,12 @@ function AttendancePage({ classes, students, teachers, modalities }) {
 }
 
 // ─── FINANCIAL ────────────────────────────────────────────────────────────────
-function FinancialPage({ payments, setPayments, students, plans }) {
+function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
   const [tab, setTab] = useState("payments");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [planForm, setPlanForm] = useState({});
-  const [localPlans, setLocalPlans] = useState(plans);
+
 
   const paidTotal = payments.filter(p => p.status === "Pago").reduce((s, p) => s + p.valor, 0);
   const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + p.valor, 0);
@@ -871,11 +871,30 @@ function FinancialPage({ payments, setPayments, students, plans }) {
     setModal(null);
   };
 
+  //const savePlan = () => {
+  //if (!planForm.nome) return;
+  //const entry = { ...planForm, valor: Number(planForm.valor), frequencia: Number(planForm.frequencia) };
+  //if (planForm.id) { setPlans(prev => prev.map(p => p.id === planForm.id ? entry : p)); }
+  //else { setPlans(prev => [...prev, { ...entry, id: Date.now() }]); }
+  //setModal(null);
+  //};
+
   const savePlan = () => {
     if (!planForm.nome) return;
-    const entry = { ...planForm, valor: Number(planForm.valor), frequencia: Number(planForm.frequencia) };
-    if (planForm.id) { setLocalPlans(prev => prev.map(p => p.id === planForm.id ? entry : p)); }
-    else { setLocalPlans(prev => [...prev, { ...entry, id: Date.now() }]); }
+    const entry = {
+      ...planForm,
+      valor: Number(planForm.valor),
+      frequencia: Number(planForm.frequencia)
+    };
+    if (planForm.id) {
+      // editar plano
+      setPlans(prev =>
+        prev.map(p => (p.id === planForm.id ? entry : p))
+      );
+    } else {
+      // novo plano
+      setPlans(prev => [...prev, { ...entry, id: Date.now() }]);
+    }
     setModal(null);
   };
 
@@ -958,13 +977,13 @@ function FinancialPage({ payments, setPayments, students, plans }) {
             </Btn>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-            {localPlans.map(p => (
+            {plans.map(p => (
               <div key={p.id} style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{p.nome}</h3>
                   <div style={{ display: "flex", gap: 6 }}>
                     <Btn onClick={() => { setPlanForm(p); setModal("plan"); }} variant="ghost" size="sm"><Icon d={icons.edit} size={14} /></Btn>
-                    <Btn onClick={() => { if (confirm("Excluir plano?")) setLocalPlans(prev => prev.filter(pl => pl.id !== p.id)); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
+                    <Btn onClick={() => { if (confirm("Excluir plano?")) setPlans(prev => prev.filter(pl => pl.id !== p.id)); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
                   </div>
                 </div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>R$ {p.valor}</div>
@@ -981,7 +1000,7 @@ function FinancialPage({ payments, setPayments, students, plans }) {
             <div style={{ gridColumn: "1/-1" }}>
               <Input label="Aluno" value={String(form.alunoId)} onChange={v => setForm(p => ({ ...p, alunoId: v }))} options={students.map(s => ({ value: String(s.id), label: s.nome }))} />
             </div>
-            <Input label="Plano" value={String(form.planoId)} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={localPlans.map(p => ({ value: String(p.id), label: p.nome }))} />
+            <Input label="Plano" value={String(form.planoId)} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: String(p.id), label: p.nome }))} />
             <Input label="Valor (R$)" type="number" value={String(form.valor)} onChange={v => setForm(p => ({ ...p, valor: v }))} />
             <Input label="Vencimento" type="date" value={form.vencimento} onChange={v => setForm(p => ({ ...p, vencimento: v }))} />
             <Input label="Data Pagamento" type="date" value={form.dataPagamento || ""} onChange={v => setForm(p => ({ ...p, dataPagamento: v }))} />
@@ -1164,11 +1183,11 @@ export default function App() {
   const [modalities, setModalities] = useLocalStorage("fc_modalities", INITIAL_MODALITIES);
   const [classes, setClasses] = useLocalStorage("fc_classes", INITIAL_CLASSES);
   const [payments, setPayments] = useLocalStorage("fc_payments", INITIAL_PAYMENTS);
-  const plans = INITIAL_PLANS;
+  const [plans, setPlans] = useLocalStorage("fc_plans", INITIAL_PLANS);
 
   if (!auth) return <LoginScreen onLogin={() => setAuth(true)} />;
 
-  const pageProps = { students, setStudents, teachers, setTeachers, modalities, setModalities, classes, setClasses, payments, setPayments, plans };
+  const pageProps = { students, setStudents, teachers, setTeachers, modalities, setModalities, classes, setClasses, payments, setPayments, plans, setPlans };
 
   const pages = {
     dashboard: <Dashboard {...pageProps} />,

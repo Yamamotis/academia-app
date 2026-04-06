@@ -1,45 +1,62 @@
 import { useState, useEffect, useMemo } from "react";
 import crypto from "crypto-js";
+import { supabase, toDb, fromDb } from "./supabase";
 
-// ─── PERSISTENT STATE HOOK ───────────────────────────────────────────────────
-function useLocalStorage(key, initialValue) {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
+// ─── SUPABASE TABLE HOOK ──────────────────────────────────────────────────────
+function useTable(tableName) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch { }
-  }, [key, value]);
+    supabase
+      .from(tableName)
+      .select("*")
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.error(`[${tableName}] fetch error:`, error.message);
+        else setRows((data || []).map(fromDb));
+        setLoading(false);
+      });
+  }, [tableName]);
 
-  return [value, setValue];
+  const add = async (record) => {
+    const { id: _id, ...rest } = record; // remove id local se existir
+    const { data, error } = await supabase
+      .from(tableName)
+      .insert([toDb(rest)])
+      .select()
+      .single();
+    if (error) { console.error(`[${tableName}] insert error:`, error.message); return null; }
+    const mapped = fromDb(data);
+    setRows((prev) => [...prev, mapped]);
+    return mapped;
+  };
+
+  const update = async (id, record) => {
+    const { id: _id, created_at: _c, ...rest } = toDb(record);
+    const { data, error } = await supabase
+      .from(tableName)
+      .update(rest)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) { console.error(`[${tableName}] update error:`, error.message); return null; }
+    const mapped = fromDb(data);
+    setRows((prev) => prev.map((r) => r.id === id ? mapped : r));
+    return mapped;
+  };
+
+  const remove = async (id) => {
+    const { error } = await supabase.from(tableName).delete().eq("id", id);
+    if (error) { console.error(`[${tableName}] delete error:`, error.message); return false; }
+    setRows((prev) => prev.filter((r) => r.id !== id));
+    return true;
+  };
+
+  return { rows, loading, add, update, remove };
 }
 
-// ─── INITIAL DATA ───────────────────────────────────────────────────────────
-const INITIAL_MODALITIES = [
-];
-
-const INITIAL_PLANS = [
-];
-
-const INITIAL_TEACHERS = [
-];
-
-const INITIAL_STUDENTS = [
-];
-
-const INITIAL_CLASSES = [
-];
-
-const INITIAL_PAYMENTS = [
-];
-
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 const STATUS_COLORS = { Ativo: "#22c55e", Inativo: "#64748b", Inadimplente: "#ef4444", Suspenso: "#f59e0b" };
 const PAY_STATUS_COLORS = { Pago: "#22c55e", Pendente: "#f59e0b", Atrasado: "#ef4444" };
@@ -205,6 +222,28 @@ const Table = ({ cols, rows, onEdit, onDelete, extraActions }) => (
   </div>
 );
 
+// ─── LOADING SCREEN ───────────────────────────────────────────────────────────
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#0f172a", display: "flex", alignItems: "center",
+      justifyContent: "center", fontFamily: "'Barlow', sans-serif", flexDirection: "column", gap: 16
+    }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;700;900&display=swap');`}</style>
+      <div style={{
+        width: 56, height: 56, borderRadius: 14, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+      </div>
+      <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700, letterSpacing: "0.1em" }}>CARREGANDO...</div>
+      <div style={{ color: "#475569", fontSize: 12 }}>Conectando ao banco de dados</div>
+    </div>
+  );
+}
+
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [user, setUser] = useState("");
@@ -212,18 +251,11 @@ function LoginScreen({ onLogin }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-
-
   const HASHED_PASSWORD = "5395546dfb06c37bc99889acce742b0bd5e1d48916ad4c9afa120a884c43966a";
 
   const handleLogin = () => {
-    if (!user || !pass) {
-      setErr("Preencha todos os campos.");
-      return;
-    }
-
+    if (!user || !pass) { setErr("Preencha todos os campos."); return; }
     const passHash = crypto.SHA256(pass).toString();
-
     if (user === "admin" && passHash === HASHED_PASSWORD) {
       onLogin();
     } else {
@@ -245,14 +277,12 @@ function LoginScreen({ onLogin }) {
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
       `}</style>
-      {/* BG Pattern */}
       <div style={{ position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
         <div style={{ position: "absolute", top: -200, right: -200, width: 600, height: 600, background: "radial-gradient(circle, #38bdf811 0%, transparent 70%)" }} />
         <div style={{ position: "absolute", bottom: -200, left: -200, width: 500, height: 500, background: "radial-gradient(circle, #0ea5e911 0%, transparent 70%)" }} />
       </div>
 
       <div style={{ width: "100%", maxWidth: 420, padding: 20, position: "relative" }}>
-        {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div style={{
             width: 72, height: 72, borderRadius: 18, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
@@ -262,8 +292,8 @@ function LoginScreen({ onLogin }) {
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
             </svg>
           </div>
-          <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 32, fontWeight: 900, color: "#f1f5f9", margin: 0, letterSpacing: "0.02em" }}>FIGHT CLUB</h1>
-          <p style={{ color: "#64748b", fontSize: 14, margin: "4px 0 0" }}>Sistema de Gestão para Academia</p>
+          <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 32, fontWeight: 900, color: "#f1f5f9", margin: 0, letterSpacing: "0.02em" }}>PATRIOTA</h1>
+          <p style={{ color: "#64748b", fontSize: 14, margin: "4px 0 0" }}>FIGHT TEAM</p>
         </div>
 
         <Card>
@@ -301,24 +331,22 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
   const totalStudents = students.length;
   const activeStudents = students.filter(s => s.status === "Ativo").length;
   const delinquents = students.filter(s => s.status === "Inadimplente").length;
-  const thisMonth = students.filter(s => s.dataMatricula?.startsWith("2024")).length;
+  const thisMonth = students.filter(s => s.dataMatricula?.startsWith(new Date().getFullYear().toString())).length;
   const totalTeachers = teachers.length;
   const weekClasses = classes.length;
   const todayDay = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][new Date().getDay()];
   const todayClasses = classes.filter(c => c.diaSemana === todayDay);
   const paidPayments = payments.filter(p => p.status === "Pago");
-  const monthRevenue = paidPayments.reduce((sum, p) => sum + p.valor, 0);
-  const overdueAmount = payments.filter(p => p.status === "Atrasado").reduce((sum, p) => sum + p.valor, 0);
+  const monthRevenue = paidPayments.reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
+  const overdueAmount = payments.filter(p => p.status === "Atrasado").reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
 
   return (
     <div>
       <PageHeader title="DASHBOARD" subtitle="Visão geral da academia" />
-
-      {/* Stats Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
         <StatCard label="Total de Alunos" value={totalStudents} icon="students" color="#38bdf8" sub={`${activeStudents} ativos`} />
         <StatCard label="Alunos Inadimplentes" value={delinquents} icon="alert" color="#ef4444" sub="Requer atenção" />
-        <StatCard label="Novos no Mês" value={thisMonth} icon="trend" color="#22c55e" sub="Este mês" />
+        <StatCard label="Novos no Ano" value={thisMonth} icon="trend" color="#22c55e" sub="Este ano" />
         <StatCard label="Professores" value={totalTeachers} icon="teachers" color="#a78bfa" sub="Ativos na academia" />
         <StatCard label="Aulas na Semana" value={weekClasses} icon="classes" color="#f59e0b" sub={`${todayClasses.length} hoje`} />
         <StatCard label="Receita do Mês" value={`R$ ${monthRevenue.toLocaleString("pt-BR")}`} icon="financial" color="#34d399" sub="Mensalidades pagas" />
@@ -326,7 +354,6 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
         <StatCard label="Modalidades" value={modalities.length} icon="modalities" color="#38bdf8" sub="Artes marciais" />
       </div>
 
-      {/* Today's schedule */}
       <Card>
         <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           📅 Agenda de Hoje — {todayDay}
@@ -367,15 +394,16 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
-function StudentsPage({ students, setStudents, teachers, modalities, plans, payments }) {
+function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments }) {
   const [search, setSearch] = useState("");
   const [filterModal, setFilterModal] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [viewStudent, setViewStudent] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const filtered = useMemo(() => students.filter(s =>
-    (s.nome.toLowerCase().includes(search.toLowerCase()) || s.cpf.includes(search)) &&
+    ((s.nome || "").toLowerCase().includes(search.toLowerCase()) || (s.cpf || "").includes(search)) &&
     (!filterModal || s.modalidade === filterModal)
   ), [students, search, filterModal]);
 
@@ -383,17 +411,23 @@ function StudentsPage({ students, setStudents, teachers, modalities, plans, paym
     setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", status: "Ativo" });
     setModal("form");
   };
-  const openEdit = (s) => { setForm({ ...s, professorId: String(s.professorId), planoId: String(s.planoId) }); setModal("form"); };
-  const save = () => {
+  const openEdit = (s) => { setForm({ ...s }); setModal("form"); };
+
+  const save = async () => {
     if (!form.nome) return;
+    setSaving(true);
     if (form.id) {
-      setStudents(prev => prev.map(s => s.id === form.id ? { ...form, professorId: Number(form.professorId), planoId: Number(form.planoId) } : s));
+      await updateStudent(form.id, form);
     } else {
-      setStudents(prev => [...prev, { ...form, id: Date.now(), professorId: Number(form.professorId), planoId: Number(form.planoId) }]);
+      await addStudent(form);
     }
+    setSaving(false);
     setModal(null);
   };
-  const del = (id) => { if (confirm("Excluir aluno?")) setStudents(prev => prev.filter(s => s.id !== id)); };
+
+  const del = async (id) => {
+    if (confirm("Excluir aluno?")) await removeStudent(id);
+  };
 
   const statusOpts = ["Ativo", "Inativo", "Suspenso", "Inadimplente"].map(s => ({ value: s, label: s }));
 
@@ -443,21 +477,21 @@ function StudentsPage({ students, setStudents, teachers, modalities, plans, paym
       {modal === "form" && (
         <Modal title={form.id ? "Editar Aluno" : "Novo Aluno"} onClose={() => setModal(null)} width={640}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
-            <Input label="CPF" value={form.cpf} onChange={v => setForm(p => ({ ...p, cpf: v }))} placeholder="000.000.000-00" />
-            <Input label="Data de Nascimento" type="date" value={form.dataNascimento} onChange={v => setForm(p => ({ ...p, dataNascimento: v }))} />
-            <Input label="Telefone" value={form.telefone} onChange={v => setForm(p => ({ ...p, telefone: v }))} placeholder="(00) 00000-0000" />
-            <Input label="Email" type="email" value={form.email} onChange={v => setForm(p => ({ ...p, email: v }))} />
-            <div style={{ gridColumn: "1/-1" }}><Input label="Endereço" value={form.endereco} onChange={v => setForm(p => ({ ...p, endereco: v }))} /></div>
-            <Input label="Data de Matrícula" type="date" value={form.dataMatricula} onChange={v => setForm(p => ({ ...p, dataMatricula: v }))} />
-            <Input label="Modalidade" value={form.modalidade} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
-            <Input label="Professor Responsável" value={String(form.professorId)} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: String(t.id), label: t.nome }))} />
-            <Input label="Plano" value={String(form.planoId)} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: String(p.id), label: `${p.nome} — R$ ${p.valor}` }))} />
-            <Input label="Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))} options={statusOpts} />
+            <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
+            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} placeholder="000.000.000-00" />
+            <Input label="Data de Nascimento" type="date" value={form.dataNascimento || ""} onChange={v => setForm(p => ({ ...p, dataNascimento: v }))} />
+            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: v }))} placeholder="(00) 00000-0000" />
+            <Input label="Email" type="email" value={form.email || ""} onChange={v => setForm(p => ({ ...p, email: v }))} />
+            <div style={{ gridColumn: "1/-1" }}><Input label="Endereço" value={form.endereco || ""} onChange={v => setForm(p => ({ ...p, endereco: v }))} /></div>
+            <Input label="Data de Matrícula" type="date" value={form.dataMatricula || ""} onChange={v => setForm(p => ({ ...p, dataMatricula: v }))} />
+            <Input label="Modalidade" value={form.modalidade || ""} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
+            <Input label="Professor Responsável" value={form.professorId || ""} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: t.id, label: t.nome }))} />
+            <Input label="Plano" value={form.planoId || ""} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: p.id, label: `${p.nome} — R$ ${p.valor}` }))} />
+            <Input label="Status" value={form.status || "Ativo"} onChange={v => setForm(p => ({ ...p, status: v }))} options={statusOpts} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={save}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={save} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -494,24 +528,34 @@ function StudentsPage({ students, setStudents, teachers, modalities, plans, paym
 }
 
 // ─── TEACHERS ────────────────────────────────────────────────────────────────
-function TeachersPage({ teachers, setTeachers, modalities, classes }) {
+function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, modalities, classes }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const filtered = teachers.filter(t => t.nome.toLowerCase().includes(search.toLowerCase()));
+  const filtered = teachers.filter(t => (t.nome || "").toLowerCase().includes(search.toLowerCase()));
 
   const openNew = () => {
     setForm({ nome: "", cpf: "", telefone: "", email: "", modalidade: "", dataContratacao: new Date().toISOString().split("T")[0], status: "Ativo" });
     setModal("form");
   };
-  const save = () => {
+
+  const save = async () => {
     if (!form.nome) return;
-    if (form.id) { setTeachers(prev => prev.map(t => t.id === form.id ? form : t)); }
-    else { setTeachers(prev => [...prev, { ...form, id: Date.now() }]); }
+    setSaving(true);
+    if (form.id) {
+      await updateTeacher(form.id, form);
+    } else {
+      await addTeacher(form);
+    }
+    setSaving(false);
     setModal(null);
   };
-  const del = id => { if (confirm("Excluir professor?")) setTeachers(prev => prev.filter(t => t.id !== id)); };
+
+  const del = async (id) => {
+    if (confirm("Excluir professor?")) await removeTeacher(id);
+  };
 
   return (
     <div>
@@ -549,17 +593,17 @@ function TeachersPage({ teachers, setTeachers, modalities, classes }) {
       {modal === "form" && (
         <Modal title={form.id ? "Editar Professor" : "Novo Professor"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
-            <Input label="CPF" value={form.cpf} onChange={v => setForm(p => ({ ...p, cpf: v }))} />
-            <Input label="Telefone" value={form.telefone} onChange={v => setForm(p => ({ ...p, telefone: v }))} />
-            <Input label="Email" type="email" value={form.email} onChange={v => setForm(p => ({ ...p, email: v }))} />
-            <Input label="Modalidade" value={form.modalidade} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
-            <Input label="Data de Contratação" type="date" value={form.dataContratacao} onChange={v => setForm(p => ({ ...p, dataContratacao: v }))} />
-            <Input label="Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))} options={[{ value: "Ativo", label: "Ativo" }, { value: "Inativo", label: "Inativo" }]} />
+            <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
+            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} />
+            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: v }))} />
+            <Input label="Email" type="email" value={form.email || ""} onChange={v => setForm(p => ({ ...p, email: v }))} />
+            <Input label="Modalidade" value={form.modalidade || ""} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
+            <Input label="Data de Contratação" type="date" value={form.dataContratacao || ""} onChange={v => setForm(p => ({ ...p, dataContratacao: v }))} />
+            <Input label="Status" value={form.status || "Ativo"} onChange={v => setForm(p => ({ ...p, status: v }))} options={[{ value: "Ativo", label: "Ativo" }, { value: "Inativo", label: "Inativo" }]} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={save}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={save} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -568,18 +612,28 @@ function TeachersPage({ teachers, setTeachers, modalities, classes }) {
 }
 
 // ─── MODALITIES ───────────────────────────────────────────────────────────────
-function ModalitiesPage({ modalities, setModalities }) {
+function ModalitiesPage({ modalities, addModality, updateModality, removeModality }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const openNew = () => { setForm({ nome: "", descricao: "", nivel: "Todos" }); setModal("form"); };
-  const save = () => {
+
+  const save = async () => {
     if (!form.nome) return;
-    if (form.id) { setModalities(prev => prev.map(m => m.id === form.id ? form : m)); }
-    else { setModalities(prev => [...prev, { ...form, id: Date.now() }]); }
+    setSaving(true);
+    if (form.id) {
+      await updateModality(form.id, form);
+    } else {
+      await addModality(form);
+    }
+    setSaving(false);
     setModal(null);
   };
-  const del = id => { if (confirm("Excluir modalidade?")) setModalities(prev => prev.filter(m => m.id !== id)); };
+
+  const del = async (id) => {
+    if (confirm("Excluir modalidade?")) await removeModality(id);
+  };
 
   const nivelColor = { "Iniciante": "#22c55e", "Intermediário": "#f59e0b", "Avançado": "#ef4444", "Todos": "#38bdf8" };
 
@@ -592,10 +646,7 @@ function ModalitiesPage({ modalities, setModalities }) {
         {modalities.map(m => (
           <Card key={m.id} style={{ position: "relative" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: 10, background: "#38bdf822",
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: "#38bdf822", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Icon d={icons.modalities} size={22} color="#38bdf8" />
               </div>
               <div style={{ display: "flex", gap: 6 }}>
@@ -613,17 +664,17 @@ function ModalitiesPage({ modalities, setModalities }) {
       {modal === "form" && (
         <Modal title={form.id ? "Editar Modalidade" : "Nova Modalidade"} onClose={() => setModal(null)} width={480}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Input label="Nome" value={form.nome} onChange={v => setForm(p => ({ ...p, nome: v }))} required />
+            <Input label="Nome" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Descrição</label>
-              <textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} rows={3}
+              <textarea value={form.descricao || ""} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} rows={3}
                 style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", resize: "vertical" }} />
             </div>
-            <Input label="Nível" value={form.nivel} onChange={v => setForm(p => ({ ...p, nivel: v }))} options={["Iniciante", "Intermediário", "Avançado", "Todos"].map(l => ({ value: l, label: l }))} />
+            <Input label="Nível" value={form.nivel || "Todos"} onChange={v => setForm(p => ({ ...p, nivel: v }))} options={["Iniciante", "Intermediário", "Avançado", "Todos"].map(l => ({ value: l, label: l }))} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={save}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={save} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -632,19 +683,32 @@ function ModalitiesPage({ modalities, setModalities }) {
 }
 
 // ─── CLASSES ──────────────────────────────────────────────────────────────────
-function ClassesPage({ classes, setClasses, teachers, modalities }) {
+function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, modalities }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  const openNew = () => setForm({ modalidadeId: "", professorId: "", diaSemana: "Segunda", horarioInicio: "18:00", horarioFim: "19:30", capacidade: 20, sala: "" });
-  const save = () => {
+  const openNew = () => {
+    setForm({ modalidadeId: "", professorId: "", diaSemana: "Segunda", horarioInicio: "18:00", horarioFim: "19:30", capacidade: 20, sala: "" });
+    setModal("form");
+  };
+
+  const save = async () => {
     if (!form.modalidadeId || !form.professorId) return;
-    const entry = { ...form, modalidadeId: Number(form.modalidadeId), professorId: Number(form.professorId), capacidade: Number(form.capacidade) };
-    if (form.id) { setClasses(prev => prev.map(c => c.id === form.id ? entry : c)); }
-    else { setClasses(prev => [...prev, { ...entry, id: Date.now() }]); }
+    const entry = { ...form, capacidade: Number(form.capacidade) };
+    setSaving(true);
+    if (form.id) {
+      await updateClass(form.id, entry);
+    } else {
+      await addClass(entry);
+    }
+    setSaving(false);
     setModal(null);
   };
-  const del = id => { if (confirm("Excluir aula?")) setClasses(prev => prev.filter(c => c.id !== id)); };
+
+  const del = async (id) => {
+    if (confirm("Excluir aula?")) await removeClass(id);
+  };
 
   return (
     <div>
@@ -662,7 +726,7 @@ function ClassesPage({ classes, setClasses, teachers, modalities }) {
             { key: "sala", label: "Sala" },
           ]}
           rows={classes}
-          onEdit={r => { setForm({ ...r, modalidadeId: String(r.modalidadeId), professorId: String(r.professorId) }); setModal("form"); }}
+          onEdit={r => { setForm({ ...r }); setModal("form"); }}
           onDelete={del}
         />
       </Card>
@@ -670,17 +734,17 @@ function ClassesPage({ classes, setClasses, teachers, modalities }) {
       {modal === "form" && (
         <Modal title={form.id ? "Editar Aula" : "Nova Aula"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Input label="Modalidade" value={String(form.modalidadeId)} onChange={v => setForm(p => ({ ...p, modalidadeId: v }))} options={modalities.map(m => ({ value: String(m.id), label: m.nome }))} />
-            <Input label="Professor" value={String(form.professorId)} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: String(t.id), label: t.nome }))} />
-            <Input label="Dia da Semana" value={form.diaSemana} onChange={v => setForm(p => ({ ...p, diaSemana: v }))} options={DAYS.map(d => ({ value: d, label: d }))} />
-            <Input label="Sala" value={form.sala} onChange={v => setForm(p => ({ ...p, sala: v }))} placeholder="Ex: Tatame A" />
-            <Input label="Horário Início" type="time" value={form.horarioInicio} onChange={v => setForm(p => ({ ...p, horarioInicio: v }))} />
-            <Input label="Horário Fim" type="time" value={form.horarioFim} onChange={v => setForm(p => ({ ...p, horarioFim: v }))} />
-            <Input label="Capacidade (alunos)" type="number" value={String(form.capacidade)} onChange={v => setForm(p => ({ ...p, capacidade: v }))} />
+            <Input label="Modalidade" value={form.modalidadeId || ""} onChange={v => setForm(p => ({ ...p, modalidadeId: v }))} options={modalities.map(m => ({ value: m.id, label: m.nome }))} />
+            <Input label="Professor" value={form.professorId || ""} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: t.id, label: t.nome }))} />
+            <Input label="Dia da Semana" value={form.diaSemana || "Segunda"} onChange={v => setForm(p => ({ ...p, diaSemana: v }))} options={DAYS.map(d => ({ value: d, label: d }))} />
+            <Input label="Sala" value={form.sala || ""} onChange={v => setForm(p => ({ ...p, sala: v }))} placeholder="Ex: Tatame A" />
+            <Input label="Horário Início" type="time" value={form.horarioInicio || ""} onChange={v => setForm(p => ({ ...p, horarioInicio: v }))} />
+            <Input label="Horário Fim" type="time" value={form.horarioFim || ""} onChange={v => setForm(p => ({ ...p, horarioFim: v }))} />
+            <Input label="Capacidade (alunos)" type="number" value={String(form.capacidade || 20)} onChange={v => setForm(p => ({ ...p, capacidade: v }))} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={save}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={save} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -692,12 +756,11 @@ function ClassesPage({ classes, setClasses, teachers, modalities }) {
 function SchedulePage({ classes, teachers, modalities }) {
   const hours = ["07:00", "08:00", "09:00", "10:00", "11:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
   const days = DAYS.slice(0, 6);
-  const modColors = { 1: "#38bdf8", 2: "#f59e0b", 3: "#a78bfa", 4: "#ef4444", 5: "#22c55e" };
+  const modColors = ["#38bdf8", "#f59e0b", "#a78bfa", "#ef4444", "#22c55e", "#fb923c", "#e879f9"];
 
   return (
     <div>
       <PageHeader title="AGENDA SEMANAL" subtitle="Grade de horários da academia" />
-
       <Card style={{ padding: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
@@ -714,18 +777,15 @@ function SchedulePage({ classes, teachers, modalities }) {
                 <tr key={hour} style={{ borderBottom: "1px solid #334155" }}>
                   <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "#38bdf8", verticalAlign: "top", borderRight: "1px solid #334155", whiteSpace: "nowrap" }}>{hour}</td>
                   {days.map(day => {
-                    const cls = classes.filter(c => c.diaSemana === day && c.horarioInicio.startsWith(hour.split(":")[0]));
+                    const cls = classes.filter(c => c.diaSemana === day && (c.horarioInicio || "").startsWith(hour.split(":")[0]));
                     return (
                       <td key={day} style={{ padding: 6, verticalAlign: "top", minWidth: 130, borderRight: "1px solid #1e293b" }}>
-                        {cls.map(c => {
+                        {cls.map((c, ci) => {
                           const mod = modalities.find(m => m.id === c.modalidadeId);
                           const prof = teachers.find(t => t.id === c.professorId);
-                          const color = modColors[c.modalidadeId] || "#38bdf8";
+                          const color = modColors[ci % modColors.length];
                           return (
-                            <div key={c.id} style={{
-                              background: color + "18", border: `1px solid ${color}44`, borderRadius: 6,
-                              padding: "6px 8px", marginBottom: 4
-                            }}>
+                            <div key={c.id} style={{ background: color + "18", border: `1px solid ${color}44`, borderRadius: 6, padding: "6px 8px", marginBottom: 4 }}>
                               <div style={{ fontSize: 12, fontWeight: 700, color }}>{mod?.nome}</div>
                               <div style={{ fontSize: 11, color: "#64748b" }}>{prof?.nome?.split(" ")[0]}</div>
                               <div style={{ fontSize: 11, color: "#475569" }}>{c.horarioInicio}–{c.horarioFim}</div>
@@ -751,14 +811,11 @@ function AttendancePage({ classes, students, teachers, modalities }) {
   const [attendance, setAttendance] = useState({});
   const [saved, setSaved] = useState(false);
 
-  const cls = classes.find(c => c.id === Number(selectedClass));
+  const cls = classes.find(c => c.id === selectedClass);
   const mod = cls && modalities.find(m => m.id === cls.modalidadeId);
   const classStudents = cls ? students.filter(s => s.modalidade === mod?.nome && s.status === "Ativo") : [];
 
-  const toggle = id => {
-    setAttendance(prev => ({ ...prev, [id]: !prev[id] }));
-    setSaved(false);
-  };
+  const toggle = id => { setAttendance(prev => ({ ...prev, [id]: !prev[id] })); setSaved(false); };
 
   const saveAttendance = () => {
     setSaved(true);
@@ -770,14 +827,13 @@ function AttendancePage({ classes, students, teachers, modalities }) {
   return (
     <div>
       <PageHeader title="PRESENÇA" subtitle="Controle de presença nas aulas" />
-
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 280 }}>
             <Input label="Selecionar Aula" value={selectedClass} onChange={setSelectedClass} options={classes.map(c => {
               const m = modalities.find(m => m.id === c.modalidadeId);
               const t = teachers.find(t => t.id === c.professorId);
-              return { value: String(c.id), label: `${c.diaSemana} ${c.horarioInicio} – ${m?.nome} (${t?.nome?.split(" ")[0]})` };
+              return { value: c.id, label: `${c.diaSemana} ${c.horarioInicio} – ${m?.nome} (${t?.nome?.split(" ")[0]})` };
             })} />
           </div>
           <div style={{ fontSize: 14, color: "#64748b", paddingTop: 20 }}>
@@ -799,7 +855,6 @@ function AttendancePage({ classes, students, teachers, modalities }) {
               Ausentes: <strong>{classStudents.length - presentCount}</strong>
             </div>
           </div>
-
           <Card>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 20 }}>
               {classStudents.map(s => {
@@ -811,11 +866,7 @@ function AttendancePage({ classes, students, teachers, modalities }) {
                     background: present ? "#22c55e18" : "#0f172a",
                     border: `1px solid ${present ? "#22c55e44" : "#334155"}`,
                   }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                      background: present ? "#22c55e" : "#334155",
-                      display: "flex", alignItems: "center", justifyContent: "center"
-                    }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: present ? "#22c55e" : "#334155", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {present && <Icon d={icons.check} size={14} color="white" />}
                     </div>
                     <div>
@@ -826,11 +877,9 @@ function AttendancePage({ classes, students, teachers, modalities }) {
                 );
               })}
             </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <Btn onClick={saveAttendance} variant={saved ? "success" : "primary"}>
-                {saved ? <><Icon d={icons.check} size={16} />Presença Salva!</> : <><Icon d={icons.check} size={16} />Confirmar Presença</>}
-              </Btn>
-            </div>
+            <Btn onClick={saveAttendance} variant={saved ? "success" : "primary"}>
+              {saved ? <><Icon d={icons.check} size={16} />Presença Salva!</> : <><Icon d={icons.check} size={16} />Confirmar Presença</>}
+            </Btn>
           </Card>
         </>
       )}
@@ -848,53 +897,44 @@ function AttendancePage({ classes, students, teachers, modalities }) {
 }
 
 // ─── FINANCIAL ────────────────────────────────────────────────────────────────
-function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
+function FinancialPage({ payments, addPayment, updatePayment, removePayment, students, plans, addPlan, updatePlan, removePlan }) {
   const [tab, setTab] = useState("payments");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [planForm, setPlanForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
+  const paidTotal = payments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const overdueTotal = payments.filter(p => p.status === "Atrasado").reduce((s, p) => s + (Number(p.valor) || 0), 0);
 
-  const paidTotal = payments.filter(p => p.status === "Pago").reduce((s, p) => s + p.valor, 0);
-  const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + p.valor, 0);
-  const overdueTotal = payments.filter(p => p.status === "Atrasado").reduce((s, p) => s + p.valor, 0);
-
-  const registerPayment = (payment) => {
-    setPayments(prev => prev.map(p => p.id === payment.id ? { ...p, status: "Pago", dataPagamento: new Date().toISOString().split("T")[0] } : p));
+  const registerPayment = async (payment) => {
+    await updatePayment(payment.id, { ...payment, status: "Pago", dataPagamento: new Date().toISOString().split("T")[0] });
   };
 
-  const savePayment = () => {
+  const savePayment = async () => {
     if (!form.alunoId) return;
-    const entry = { ...form, alunoId: Number(form.alunoId), planoId: Number(form.planoId), valor: Number(form.valor) };
-    if (form.id) { setPayments(prev => prev.map(p => p.id === form.id ? entry : p)); }
-    else { setPayments(prev => [...prev, { ...entry, id: Date.now() }]); }
+    const entry = { ...form, valor: Number(form.valor) };
+    setSaving(true);
+    if (form.id) {
+      await updatePayment(form.id, entry);
+    } else {
+      await addPayment(entry);
+    }
+    setSaving(false);
     setModal(null);
   };
 
-  //const savePlan = () => {
-  //if (!planForm.nome) return;
-  //const entry = { ...planForm, valor: Number(planForm.valor), frequencia: Number(planForm.frequencia) };
-  //if (planForm.id) { setPlans(prev => prev.map(p => p.id === planForm.id ? entry : p)); }
-  //else { setPlans(prev => [...prev, { ...entry, id: Date.now() }]); }
-  //setModal(null);
-  //};
-
-  const savePlan = () => {
+  const savePlan = async () => {
     if (!planForm.nome) return;
-    const entry = {
-      ...planForm,
-      valor: Number(planForm.valor),
-      frequencia: Number(planForm.frequencia)
-    };
+    const entry = { ...planForm, valor: Number(planForm.valor), frequencia: Number(planForm.frequencia) };
+    setSaving(true);
     if (planForm.id) {
-      // editar plano
-      setPlans(prev =>
-        prev.map(p => (p.id === planForm.id ? entry : p))
-      );
+      await updatePlan(planForm.id, entry);
     } else {
-      // novo plano
-      setPlans(prev => [...prev, { ...entry, id: Date.now() }]);
+      await addPlan(entry);
     }
+    setSaving(false);
     setModal(null);
   };
 
@@ -902,7 +942,6 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
     <div>
       <PageHeader title="FINANCEIRO" subtitle="Controle de mensalidades e receitas" />
 
-      {/* Summary */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
         <StatCard label="Receita do Mês" value={`R$ ${paidTotal.toLocaleString("pt-BR")}`} icon="financial" color="#22c55e" />
         <StatCard label="Pendente" value={`R$ ${pendingTotal.toLocaleString("pt-BR")}`} icon="alert" color="#f59e0b" />
@@ -910,14 +949,12 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
         <StatCard label="Total Geral" value={`R$ ${(paidTotal + pendingTotal + overdueTotal).toLocaleString("pt-BR")}`} icon="trend" color="#38bdf8" />
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
         {[["payments", "Mensalidades"], ["overdue", "Inadimplentes"], ["plans", "Planos"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "all 0.15s",
-            background: tab === key ? "#38bdf8" : "#1e293b",
-            color: tab === key ? "#0f172a" : "#64748b"
+            background: tab === key ? "#38bdf8" : "#1e293b", color: tab === key ? "#0f172a" : "#64748b"
           }}>{label}</button>
         ))}
       </div>
@@ -932,14 +969,14 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
           <Table
             cols={[
               { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
-              { key: "valor", label: "Valor", render: v => `R$ ${v.toLocaleString("pt-BR")}` },
+              { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
               { key: "vencimento", label: "Vencimento" },
               { key: "dataPagamento", label: "Pago em", render: v => v || "—" },
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
             rows={payments}
-            onEdit={r => { setForm({ ...r, alunoId: String(r.alunoId), planoId: String(r.planoId) }); setModal("payment"); }}
-            onDelete={id => { if (confirm("Excluir pagamento?")) setPayments(prev => prev.filter(p => p.id !== id)); }}
+            onEdit={r => { setForm({ ...r }); setModal("payment"); }}
+            onDelete={id => { if (confirm("Excluir pagamento?")) removePayment(id); }}
             extraActions={row => row.status !== "Pago" && (
               <Btn onClick={() => registerPayment(row)} variant="success" size="sm">
                 <Icon d={icons.check} size={14} />Pago
@@ -954,7 +991,7 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
           <Table
             cols={[
               { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
-              { key: "valor", label: "Valor", render: v => `R$ ${v.toLocaleString("pt-BR")}` },
+              { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
               { key: "vencimento", label: "Vencimento" },
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
@@ -983,7 +1020,7 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{p.nome}</h3>
                   <div style={{ display: "flex", gap: 6 }}>
                     <Btn onClick={() => { setPlanForm(p); setModal("plan"); }} variant="ghost" size="sm"><Icon d={icons.edit} size={14} /></Btn>
-                    <Btn onClick={() => { if (confirm("Excluir plano?")) setPlans(prev => prev.filter(pl => pl.id !== p.id)); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
+                    <Btn onClick={() => { if (confirm("Excluir plano?")) removePlan(p.id); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
                   </div>
                 </div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>R$ {p.valor}</div>
@@ -998,17 +1035,17 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
         <Modal title={form.id ? "Editar Pagamento" : "Novo Pagamento"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div style={{ gridColumn: "1/-1" }}>
-              <Input label="Aluno" value={String(form.alunoId)} onChange={v => setForm(p => ({ ...p, alunoId: v }))} options={students.map(s => ({ value: String(s.id), label: s.nome }))} />
+              <Input label="Aluno" value={form.alunoId || ""} onChange={v => setForm(p => ({ ...p, alunoId: v }))} options={students.map(s => ({ value: s.id, label: s.nome }))} />
             </div>
-            <Input label="Plano" value={String(form.planoId)} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: String(p.id), label: p.nome }))} />
-            <Input label="Valor (R$)" type="number" value={String(form.valor)} onChange={v => setForm(p => ({ ...p, valor: v }))} />
-            <Input label="Vencimento" type="date" value={form.vencimento} onChange={v => setForm(p => ({ ...p, vencimento: v }))} />
+            <Input label="Plano" value={form.planoId || ""} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: p.id, label: p.nome }))} />
+            <Input label="Valor (R$)" type="number" value={String(form.valor || "")} onChange={v => setForm(p => ({ ...p, valor: v }))} />
+            <Input label="Vencimento" type="date" value={form.vencimento || ""} onChange={v => setForm(p => ({ ...p, vencimento: v }))} />
             <Input label="Data Pagamento" type="date" value={form.dataPagamento || ""} onChange={v => setForm(p => ({ ...p, dataPagamento: v }))} />
-            <Input label="Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))} options={["Pago", "Pendente", "Atrasado"].map(s => ({ value: s, label: s }))} />
+            <Input label="Status" value={form.status || "Pendente"} onChange={v => setForm(p => ({ ...p, status: v }))} options={["Pago", "Pendente", "Atrasado"].map(s => ({ value: s, label: s }))} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={savePayment}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={savePayment} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -1016,13 +1053,13 @@ function FinancialPage({ payments, setPayments, students, plans, setPlans }) {
       {modal === "plan" && (
         <Modal title={planForm.id ? "Editar Plano" : "Novo Plano"} onClose={() => setModal(null)} width={400}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Input label="Nome do Plano" value={planForm.nome} onChange={v => setPlanForm(p => ({ ...p, nome: v }))} />
-            <Input label="Valor (R$)" type="number" value={String(planForm.valor)} onChange={v => setPlanForm(p => ({ ...p, valor: v }))} />
-            <Input label="Frequência Semanal" type="number" value={String(planForm.frequencia)} onChange={v => setPlanForm(p => ({ ...p, frequencia: v }))} />
+            <Input label="Nome do Plano" value={planForm.nome || ""} onChange={v => setPlanForm(p => ({ ...p, nome: v }))} />
+            <Input label="Valor (R$)" type="number" value={String(planForm.valor || "")} onChange={v => setPlanForm(p => ({ ...p, valor: v }))} />
+            <Input label="Frequência Semanal" type="number" value={String(planForm.frequencia || "")} onChange={v => setPlanForm(p => ({ ...p, frequencia: v }))} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
-            <Btn onClick={savePlan}><Icon d={icons.check} size={16} />Salvar</Btn>
+            <Btn onClick={savePlan} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
           </div>
         </Modal>
       )}
@@ -1039,18 +1076,20 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
   const overduePayments = payments.filter(p => p.status === "Atrasado");
 
   const byModality = modalities.map(m => ({
+    id: m.id,
     nome: m.nome,
     alunos: students.filter(s => s.modalidade === m.nome).length,
     aulas: classes.filter(c => c.modalidadeId === m.id).length,
   }));
 
   const byTeacher = teachers.map(t => ({
+    id: t.id,
     nome: t.nome,
     modalidade: t.modalidade,
     aulas: classes.filter(c => c.professorId === t.id).length,
   }));
 
-  const monthRevenue = payments.filter(p => p.status === "Pago").reduce((s, p) => s + p.valor, 0);
+  const monthRevenue = payments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
 
   return (
     <div>
@@ -1061,8 +1100,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "all 0.15s",
-            background: tab === key ? "#38bdf8" : "#1e293b",
-            color: tab === key ? "#0f172a" : "#64748b"
+            background: tab === key ? "#38bdf8" : "#1e293b", color: tab === key ? "#0f172a" : "#64748b"
           }}>{label}</button>
         ))}
       </div>
@@ -1078,10 +1116,10 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
             <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Alunos por Modalidade</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {byModality.map(m => (
-                <div key={m.nome} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 120, fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{m.nome}</div>
                   <div style={{ flex: 1, height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${Math.max(4, (m.alunos / students.length) * 100)}%`, background: "#38bdf8", borderRadius: 4, transition: "width 0.5s" }} />
+                    <div style={{ height: "100%", width: `${Math.max(4, students.length ? (m.alunos / students.length) * 100 : 0)}%`, background: "#38bdf8", borderRadius: 4, transition: "width 0.5s" }} />
                   </div>
                   <div style={{ width: 30, textAlign: "right", fontSize: 13, fontWeight: 700, color: "#38bdf8" }}>{m.alunos}</div>
                 </div>
@@ -1137,7 +1175,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
             <StatCard label="Receita do Mês" value={`R$ ${monthRevenue.toLocaleString("pt-BR")}`} icon="financial" color="#22c55e" />
-            <StatCard label="Atrasadas" value={`R$ ${overduePayments.reduce((s, p) => s + p.valor, 0).toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" />
+            <StatCard label="Atrasadas" value={`R$ ${overduePayments.reduce((s, p) => s + (Number(p.valor) || 0), 0).toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" />
             <StatCard label="Qtd Inadimplentes" value={overduePayments.length} icon="users" color="#f59e0b" />
           </div>
           <Card>
@@ -1145,7 +1183,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
             <Table
               cols={[
                 { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
-                { key: "valor", label: "Valor", render: v => `R$ ${v.toLocaleString("pt-BR")}` },
+                { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
                 { key: "vencimento", label: "Vencimento" },
                 { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
               ]}
@@ -1178,27 +1216,38 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const [students, setStudents] = useLocalStorage("fc_students", INITIAL_STUDENTS);
-  const [teachers, setTeachers] = useLocalStorage("fc_teachers", INITIAL_TEACHERS);
-  const [modalities, setModalities] = useLocalStorage("fc_modalities", INITIAL_MODALITIES);
-  const [classes, setClasses] = useLocalStorage("fc_classes", INITIAL_CLASSES);
-  const [payments, setPayments] = useLocalStorage("fc_payments", INITIAL_PAYMENTS);
-  const [plans, setPlans] = useLocalStorage("fc_plans", INITIAL_PLANS);
+  // ── Supabase tables ──
+  const { rows: students, loading: sl, add: addStudent, update: updateStudent, remove: removeStudent } = useTable("students");
+  const { rows: teachers, loading: tl, add: addTeacher, update: updateTeacher, remove: removeTeacher } = useTable("teachers");
+  const { rows: modalities, loading: ml, add: addModality, update: updateModality, remove: removeModality } = useTable("modalities");
+  const { rows: classes, loading: cl, add: addClass, update: updateClass, remove: removeClass } = useTable("classes");
+  const { rows: payments, loading: pl, add: addPayment, update: updatePayment, remove: removePayment } = useTable("payments");
+  const { rows: plans, loading: planl, add: addPlan, update: updatePlan, remove: removePlan } = useTable("plans");
+
+  const loading = sl || tl || ml || cl || pl || planl;
 
   if (!auth) return <LoginScreen onLogin={() => setAuth(true)} />;
+  if (loading) return <LoadingScreen />;
 
-  const pageProps = { students, setStudents, teachers, setTeachers, modalities, setModalities, classes, setClasses, payments, setPayments, plans, setPlans };
+  const pageProps = {
+    students, addStudent, updateStudent, removeStudent,
+    teachers, addTeacher, updateTeacher, removeTeacher,
+    modalities, addModality, updateModality, removeModality,
+    classes, addClass, updateClass, removeClass,
+    payments, addPayment, updatePayment, removePayment,
+    plans, addPlan, updatePlan, removePlan,
+  };
 
   const pages = {
-    dashboard: <Dashboard {...pageProps} />,
+    dashboard: <Dashboard students={students} teachers={teachers} classes={classes} payments={payments} modalities={modalities} />,
     students: <StudentsPage {...pageProps} />,
     teachers: <TeachersPage {...pageProps} />,
     modalities: <ModalitiesPage {...pageProps} />,
     classes: <ClassesPage {...pageProps} />,
-    schedule: <SchedulePage {...pageProps} />,
-    attendance: <AttendancePage {...pageProps} />,
+    schedule: <SchedulePage classes={classes} teachers={teachers} modalities={modalities} />,
+    attendance: <AttendancePage classes={classes} students={students} teachers={teachers} modalities={modalities} />,
     financial: <FinancialPage {...pageProps} />,
-    reports: <ReportsPage {...pageProps} />,
+    reports: <ReportsPage students={students} teachers={teachers} classes={classes} payments={payments} modalities={modalities} />,
   };
 
   return (
@@ -1219,7 +1268,6 @@ export default function App() {
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
         transition: "width 0.2s", flexShrink: 0, overflowX: "hidden"
       }}>
-        {/* Logo */}
         <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
@@ -1237,7 +1285,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Nav */}
         <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
           {navItems.map(item => {
             const active = page === item.key;
@@ -1261,7 +1308,6 @@ export default function App() {
           })}
         </nav>
 
-        {/* Bottom actions */}
         <div style={{ padding: "12px 8px", borderTop: "1px solid #1e293b" }}>
           <button onClick={() => setSidebarOpen(p => !p)} style={{
             width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",

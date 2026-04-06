@@ -5,7 +5,6 @@ import { supabase, toDb, fromDb } from "./supabase";
 // main.jsx
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
 
 // Reset global
 const style = document.createElement('style')

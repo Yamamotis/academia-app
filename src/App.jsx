@@ -2,6 +2,22 @@ import { useState, useEffect, useMemo } from "react";
 import crypto from "crypto-js";
 import { supabase, toDb, fromDb } from "./supabase";
 
+// main.jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App.jsx'
+
+// Reset global
+const style = document.createElement('style')
+style.textContent = `*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } html, body, #root { height: 100%; width: 100%; } body { margin: 0; }`
+document.head.appendChild(style)
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
 // ─── SUPABASE TABLE HOOK ──────────────────────────────────────────────────────
 function useTable(tableName) {
   const [rows, setRows] = useState([]);
@@ -1279,8 +1295,8 @@ export default function App() {
           </div>
           {sidebarOpen && (
             <div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>FIGHT CLUB</div>
-              <div style={{ fontSize: 10, color: "#475569", marginTop: -1 }}>Academia de Lutas</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>PATRIOTA</div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: -1 }}>Fight Team</div>
             </div>
           )}
         </div>

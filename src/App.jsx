@@ -820,6 +820,7 @@ function SchedulePage({ classes, teachers, modalities }) {
   );
 }
 
+/*
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
 function AttendancePage({ classes, students, teachers, modalities }) {
   const [selectedClass, setSelectedClass] = useState("");
@@ -1211,7 +1212,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
     </div>
   );
 }
-
+*/
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 const navItems = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },

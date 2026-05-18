@@ -26,6 +26,15 @@ const maskPhone = (v) => {
   return d.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
 };
 
+const exportCSV = (filename, headers, rows) => {
+  const csv = [headers.join(","), ...rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+};
+
 // ─── TOAST ───────────────────────────────────────────────────────────────────
 const ToastContext = createContext(() => {});
 const useToast = () => useContext(ToastContext);
@@ -86,6 +95,21 @@ function useTable(tableName) {
         else setRows((data || []).map(fromDb));
         setLoading(false);
       });
+
+    const channel = supabase
+      .channel(`rt-${tableName}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: tableName }, payload => {
+        if (payload.eventType === "INSERT") {
+          setRows(prev => prev.some(r => r.id === payload.new.id) ? prev : [...prev, fromDb(payload.new)]);
+        } else if (payload.eventType === "UPDATE") {
+          setRows(prev => prev.map(r => r.id === payload.new.id ? fromDb(payload.new) : r));
+        } else if (payload.eventType === "DELETE") {
+          setRows(prev => prev.filter(r => r.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, [tableName]);
 
   const add = async (record) => {
@@ -256,42 +280,58 @@ const Modal = ({ title, onClose, children, width = 560 }) => (
   </div>
 );
 
-const Table = ({ cols, rows, onEdit, onDelete, extraActions }) => (
-  <div style={{ overflowX: "auto" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-      <thead>
-        <tr>
-          {cols.map(c => (
-            <th key={c.key} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #334155" }}>{c.label}</th>
-          ))}
-          <th style={{ textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #334155" }}>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 ? (
-          <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: 40, color: "#475569" }}>Nenhum registro encontrado</td></tr>
-        ) : rows.map((row, i) => (
-          <tr key={row.id || i} style={{ borderBottom: "1px solid #1e293b", transition: "background 0.1s" }}
-            onMouseEnter={e => e.currentTarget.style.background = "#ffffff08"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0 }) {
+  const [page, setPage] = useState(0);
+  const totalPages = pageSize > 0 ? Math.ceil(rows.length / pageSize) : 1;
+  const safePage = Math.min(page, Math.max(0, totalPages - 1));
+  const displayed = pageSize > 0 ? rows.slice(safePage * pageSize, (safePage + 1) * pageSize) : rows;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
             {cols.map(c => (
-              <td key={c.key} style={{ padding: "12px 16px", fontSize: 14, color: "#e2e8f0" }}>
-                {c.render ? c.render(row[c.key], row) : row[c.key]}
-              </td>
+              <th key={c.key} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #334155" }}>{c.label}</th>
             ))}
-            <td style={{ padding: "12px 16px", textAlign: "right" }}>
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                {extraActions && extraActions(row)}
-                {onEdit && <Btn onClick={() => onEdit(row)} variant="ghost" size="sm"><Icon d={icons.edit} size={14} />Editar</Btn>}
-                {onDelete && <Btn onClick={() => onDelete(row.id)} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>}
-              </div>
-            </td>
+            <th style={{ textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #334155" }}>Ações</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+        </thead>
+        <tbody>
+          {displayed.length === 0 ? (
+            <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: 40, color: "#475569" }}>Nenhum registro encontrado</td></tr>
+          ) : displayed.map((row, i) => (
+            <tr key={row.id || i} style={{ borderBottom: "1px solid #1e293b", transition: "background 0.1s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#ffffff08"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {cols.map(c => (
+                <td key={c.key} style={{ padding: "12px 16px", fontSize: 14, color: "#e2e8f0" }}>
+                  {c.render ? c.render(row[c.key], row) : row[c.key]}
+                </td>
+              ))}
+              <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  {extraActions && extraActions(row)}
+                  {onEdit && <Btn onClick={() => onEdit(row)} variant="ghost" size="sm"><Icon d={icons.edit} size={14} />Editar</Btn>}
+                  {onDelete && <Btn onClick={() => onDelete(row.id)} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {pageSize > 0 && totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #1e293b" }}>
+          <span style={{ fontSize: 12, color: "#64748b" }}>{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, rows.length)} de {rows.length}</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Btn onClick={() => setPage(p => Math.max(0, p - 1))} variant="ghost" size="sm" disabled={safePage === 0}>← Anterior</Btn>
+            <span style={{ fontSize: 13, color: "#64748b", padding: "0 8px" }}>{safePage + 1}/{totalPages}</span>
+            <Btn onClick={() => setPage(p => p + 1)} variant="ghost" size="sm" disabled={safePage >= totalPages - 1}>Próximo →</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── LOADING SCREEN ───────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -444,9 +484,27 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
   const weekClasses = classes.length;
   const todayDay = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][new Date().getDay()];
   const todayClasses = classes.filter(c => c.diaSemana === todayDay);
-  const paidPayments = payments.filter(p => p.status === "Pago");
-  const monthRevenue = paidPayments.reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const monthRevenue = payments.filter(p => p.status === "Pago" && (p.vencimento || "").startsWith(currentMonth)).reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
   const overdueAmount = payments.filter(p => p.status === "Atrasado").reduce((sum, p) => sum + (Number(p.valor) || 0), 0);
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayMD = todayStr.slice(5);
+  const next7MD = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(new Date().getDate() + i);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const next7Dates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(new Date().getDate() + i);
+    return d.toISOString().split("T")[0];
+  });
+  const birthdayStudents = students
+    .filter(s => s.dataNascimento && next7MD.includes(s.dataNascimento.slice(5)))
+    .map(s => ({ ...s, isToday: s.dataNascimento.slice(5) === todayMD, dayIdx: next7MD.indexOf(s.dataNascimento.slice(5)) }))
+    .sort((a, b) => a.dayIdx - b.dayIdx);
+  const upcomingDue = payments
+    .filter(p => p.status === "Pendente" && p.vencimento && next7Dates.includes(p.vencimento))
+    .sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""));
 
   return (
     <div>
@@ -497,12 +555,61 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
           </div>
         )}
       </Card>
+
+      {birthdayStudents.length > 0 && (
+        <Card style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>🎂 Aniversariantes da Semana</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {birthdayStudents.map(s => {
+              const [, mm, dd] = s.dataNascimento.split("-");
+              const age = new Date().getFullYear() - parseInt(s.dataNascimento.slice(0, 4));
+              return (
+                <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 8, background: s.isToday ? "#38bdf811" : "#0f172a", border: `1px solid ${s.isToday ? "#38bdf844" : "#334155"}` }}>
+                  <div>
+                    <span style={{ fontWeight: 600, color: "#e2e8f0" }}>{s.nome}</span>
+                    {s.modalidade && <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>{s.modalidade}</span>}
+                  </div>
+                  {s.isToday
+                    ? <Badge color="#38bdf8">🎉 Hoje! {age} anos</Badge>
+                    : <span style={{ fontSize: 13, color: "#64748b" }}>{dd}/{mm}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {upcomingDue.length > 0 && (
+        <Card style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.06em" }}>⏰ Vencimentos nos Próximos 7 Dias</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {upcomingDue.map(p => {
+              const student = students.find(s => s.id === p.alunoId);
+              const daysUntil = next7Dates.indexOf(p.vencimento);
+              return (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 8, background: "#f59e0b08", border: "1px solid #f59e0b22" }}>
+                  <div>
+                    <span style={{ fontWeight: 600, color: "#e2e8f0" }}>{student?.nome || "—"}</span>
+                    {student?.modalidade && <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>{student.modalidade}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9" }}>{formatMoney(p.valor)}</span>
+                    <span style={{ fontSize: 12, color: daysUntil === 0 ? "#ef4444" : "#f59e0b", fontWeight: 600 }}>
+                      {daysUntil === 0 ? "Vence hoje" : `em ${daysUntil}d`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
-function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment }) {
+function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment, beltHistory = [], addBeltHistory }) {
   const toast = useToast();
   const { confirm, ConfirmUI } = useConfirm();
   const [search, setSearch] = useState("");
@@ -512,12 +619,20 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
   const [form, setForm] = useState({});
   const [viewStudent, setViewStudent] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [newBeltForm, setNewBeltForm] = useState(null);
 
   const filtered = useMemo(() => students.filter(s =>
     ((s.nome || "").toLowerCase().includes(search.toLowerCase()) || (s.cpf || "").includes(search)) &&
     (!filterModal || s.modalidade === filterModal) &&
     (!filterStatus || s.status === filterStatus)
   ), [students, search, filterModal, filterStatus]);
+
+  const exportStudents = () => {
+    exportCSV("alunos.csv",
+      ["Nome", "CPF", "Telefone", "Email", "Modalidade", "Status", "Matrícula", "Dia Venc."],
+      filtered.map(s => [s.nome || "", s.cpf || "", s.telefone || "", s.email || "", s.modalidade || "", s.status || "", s.dataMatricula || "", s.diaVencimento || ""])
+    );
+  };
 
   const openNew = () => {
     setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", diaVencimento: "10", status: "Ativo" });
@@ -570,7 +685,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
   return (
     <div>
       <PageHeader title="ALUNOS" subtitle={`${filtered.length} aluno(s) encontrado(s)`}
-        action={<Btn onClick={openNew}><Icon d={icons.plus} size={16} />Novo Aluno</Btn>} />
+        action={<div style={{ display: "flex", gap: 8 }}><Btn onClick={exportStudents} variant="ghost"><Icon d={icons.reports} size={16} />CSV</Btn><Btn onClick={openNew}><Icon d={icons.plus} size={16} />Novo Aluno</Btn></div>} />
 
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -608,6 +723,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
           rows={filtered}
           onEdit={openEdit}
           onDelete={del}
+          pageSize={50}
           extraActions={(row) => (
             <Btn onClick={() => setViewStudent(row)} variant="ghost" size="sm">
               <Icon d={icons.users} size={14} />Ver
@@ -678,6 +794,42 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
               <div style={{ color: "#475569", fontSize: 14, textAlign: "center", padding: "20px 0" }}>Nenhum pagamento registrado</div>
             )}
           </div>
+
+          <h4 style={{ margin: "20px 0 10px", fontSize: 13, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Histórico de Graduações</h4>
+          {newBeltForm ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 14, background: "#0f172a", borderRadius: 8, border: "1px solid #334155", marginBottom: 12 }}>
+              <Input label="Faixa / Graduação" value={newBeltForm.belt || ""} onChange={v => setNewBeltForm(p => ({ ...p, belt: v }))} placeholder="Ex: Azul, Roxa, Preta..." />
+              <Input label="Data" type="date" value={newBeltForm.date || ""} onChange={v => setNewBeltForm(p => ({ ...p, date: v }))} />
+              <Input label="Observações" value={newBeltForm.notes || ""} onChange={v => setNewBeltForm(p => ({ ...p, notes: v }))} placeholder="Opcional" />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Btn onClick={() => setNewBeltForm(null)} variant="ghost" size="sm">Cancelar</Btn>
+                <Btn onClick={async () => {
+                  if (!newBeltForm.belt || !newBeltForm.date) return;
+                  await addBeltHistory({ studentId: viewStudent.id, belt: newBeltForm.belt, date: newBeltForm.date, notes: newBeltForm.notes || "" });
+                  setNewBeltForm(null);
+                  toast("Graduação registrada!", "success");
+                }} size="sm"><Icon d={icons.check} size={14} />Salvar</Btn>
+              </div>
+            </div>
+          ) : (
+            <Btn onClick={() => setNewBeltForm({ belt: "", date: new Date().toISOString().split("T")[0], notes: "" })} variant="ghost" size="sm" style={{ marginBottom: 12 }}>
+              <Icon d={icons.plus} size={14} />Registrar Graduação
+            </Btn>
+          )}
+          {(() => {
+            const belts = beltHistory.filter(b => b.studentId === viewStudent.id).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+            return belts.length === 0
+              ? <div style={{ color: "#475569", fontSize: 13, padding: "8px 0 16px" }}>Nenhuma graduação registrada</div>
+              : belts.map(b => (
+                <div key={b.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#0f172a", borderRadius: 8, alignItems: "center", border: "1px solid #334155", marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>{b.belt}</div>
+                    {b.notes && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{b.notes}</div>}
+                  </div>
+                  <span style={{ fontSize: 13, color: "#64748b" }}>{formatDate(b.date)}</span>
+                </div>
+              ));
+          })()}
         </Modal>
       )}
       {ConfirmUI}
@@ -1268,6 +1420,7 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
             rows={filteredPayments}
+            pageSize={50}
             onEdit={r => { setForm({ ...r }); setModal("payment"); }}
             onDelete={async id => { if (await confirm("Deseja excluir este pagamento?")) { const ok = await removePayment(id); if (ok) toast("Pagamento excluído.", "success"); } }}
             extraActions={row => row.status !== "Pago" && (
@@ -1487,13 +1640,23 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
 
       {tab === "students" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Btn onClick={() => exportCSV("todos_alunos.csv", ["Nome", "CPF", "Telefone", "Email", "Modalidade", "Status", "Matrícula"], students.map(s => [s.nome || "", s.cpf || "", s.telefone || "", s.email || "", s.modalidade || "", s.status || "", s.dataMatricula || ""]))} variant="ghost" size="sm">
+              <Icon d={icons.reports} size={14} />Exportar todos os alunos
+            </Btn>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
             <StatCard label="Total de Alunos" value={students.length} icon="students" color="#38bdf8" />
             <StatCard label="Alunos Ativos" value={activeStudents.length} icon="check" color="#22c55e" />
             <StatCard label="Inadimplentes" value={delinquentStudents.length} icon="alert" color="#ef4444" />
           </div>
           <Card>
-            <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Lista de Inadimplentes</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Lista de Inadimplentes</h3>
+              <Btn onClick={() => exportCSV("inadimplentes.csv", ["Nome", "Modalidade", "Telefone", "Status"], delinquentStudents.map(s => [s.nome || "", s.modalidade || "", s.telefone || "", s.status || ""]))} variant="ghost" size="sm">
+                <Icon d={icons.reports} size={14} />CSV
+              </Btn>
+            </div>
             <Table
               cols={[
                 { key: "nome", label: "Aluno" },
@@ -1549,7 +1712,12 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
             <RevenueChart payments={payments} />
           </Card>
           <Card>
-            <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Mensalidades em Atraso</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Mensalidades em Atraso</h3>
+              <Btn onClick={() => exportCSV("mensalidades_atraso.csv", ["Aluno", "Valor", "Vencimento", "Status"], overduePayments.map(p => [students.find(s => s.id === p.alunoId)?.nome || "", p.valor, p.vencimento || "", p.status || ""]))} variant="ghost" size="sm">
+                <Icon d={icons.reports} size={14} />CSV
+              </Btn>
+            </div>
             <Table
               cols={[
                 { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
@@ -1628,6 +1796,7 @@ function AuthenticatedApp() {
   const { rows: classes, loading: cl, add: addClass, update: updateClass, remove: removeClass } = useTable("classes");
   const { rows: payments, loading: pl, add: addPayment, update: updatePayment, remove: removePayment } = useTable("payments");
   const { rows: plans, loading: planl, add: addPlan, update: updatePlan, remove: removePlan } = useTable("plans");
+  const { rows: beltHistory, add: addBeltHistory } = useTable("belt_history");
 
   const loading = sl || tl || ml || cl || pl || planl;
 
@@ -1643,6 +1812,7 @@ function AuthenticatedApp() {
     classes, addClass, updateClass, removeClass,
     payments, addPayment, updatePayment, removePayment,
     plans, addPlan, updatePlan, removePlan,
+    beltHistory, addBeltHistory,
   };
 
   const pages = {

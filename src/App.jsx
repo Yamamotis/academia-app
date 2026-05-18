@@ -409,9 +409,10 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
-function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments }) {
+function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment }) {
   const [search, setSearch] = useState("");
   const [filterModal, setFilterModal] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [viewStudent, setViewStudent] = useState(null);
@@ -419,11 +420,12 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
 
   const filtered = useMemo(() => students.filter(s =>
     ((s.nome || "").toLowerCase().includes(search.toLowerCase()) || (s.cpf || "").includes(search)) &&
-    (!filterModal || s.modalidade === filterModal)
-  ), [students, search, filterModal]);
+    (!filterModal || s.modalidade === filterModal) &&
+    (!filterStatus || s.status === filterStatus)
+  ), [students, search, filterModal, filterStatus]);
 
   const openNew = () => {
-    setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", status: "Ativo" });
+    setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", diaVencimento: "10", status: "Ativo" });
     setModal("form");
   };
   const openEdit = (s) => { setForm({ ...s }); setModal("form"); };
@@ -434,7 +436,27 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
     if (form.id) {
       await updateStudent(form.id, form);
     } else {
-      await addStudent(form);
+      const newStudent = await addStudent(form);
+      // Gerar primeira mensalidade automaticamente se tiver plano e dia de vencimento
+      if (newStudent && form.planoId && form.diaVencimento) {
+        const plan = plans.find(p => p.id === form.planoId);
+        if (plan) {
+          const today = new Date();
+          const dia = parseInt(form.diaVencimento);
+          const vencDate = new Date(today.getFullYear(), today.getMonth(), dia);
+          // Se o dia já passou nesse mês, gerar para o próximo mês
+          if (vencDate < today) vencDate.setMonth(vencDate.getMonth() + 1);
+          const vencimento = vencDate.toISOString().split("T")[0];
+          await addPayment({
+            alunoId: newStudent.id,
+            planoId: form.planoId,
+            valor: Number(plan.valor),
+            vencimento,
+            dataPagamento: "",
+            status: "Pendente",
+          });
+        }
+      }
     }
     setSaving(false);
     setModal(null);
@@ -465,6 +487,12 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
           }}>
             <option value="">Todas Modalidades</option>
             {modalities.map(m => <option key={m.id} value={m.nome}>{m.nome}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{
+            background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none"
+          }}>
+            <option value="">Todos Status</option>
+            {["Ativo", "Inativo", "Suspenso", "Inadimplente"].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       </Card>
@@ -502,8 +530,15 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
             <Input label="Modalidade" value={form.modalidade || ""} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
             <Input label="Professor Responsável" value={form.professorId || ""} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: t.id, label: t.nome }))} />
             <Input label="Plano" value={form.planoId || ""} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: p.id, label: `${p.nome} — R$ ${p.valor}` }))} />
+            <Input label="Dia de Vencimento" value={form.diaVencimento || ""} onChange={v => setForm(p => ({ ...p, diaVencimento: v }))}
+              options={Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `Dia ${i + 1}` }))} />
             <Input label="Status" value={form.status || "Ativo"} onChange={v => setForm(p => ({ ...p, status: v }))} options={statusOpts} />
           </div>
+          {!form.id && form.planoId && form.diaVencimento && (
+            <div style={{ marginTop: 16, padding: "10px 14px", background: "#38bdf811", border: "1px solid #38bdf833", borderRadius: 8, fontSize: 13, color: "#38bdf8" }}>
+              ✓ A primeira mensalidade será gerada automaticamente para o dia <strong>{form.diaVencimento}</strong> com o valor do plano selecionado.
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
             <Btn onClick={() => setModal(null)} variant="ghost">Cancelar</Btn>
             <Btn onClick={save} disabled={saving}><Icon d={icons.check} size={16} />{saving ? "Salvando..." : "Salvar"}</Btn>
@@ -514,7 +549,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
       {viewStudent && (
         <Modal title={viewStudent.nome} onClose={() => setViewStudent(null)} width={560}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-            {[["CPF", viewStudent.cpf], ["Telefone", viewStudent.telefone], ["Email", viewStudent.email], ["Modalidade", viewStudent.modalidade], ["Matrícula", viewStudent.dataMatricula], ["Status", viewStudent.status]].map(([k, v]) => (
+            {[["CPF", viewStudent.cpf], ["Telefone", viewStudent.telefone], ["Email", viewStudent.email], ["Modalidade", viewStudent.modalidade], ["Matrícula", viewStudent.dataMatricula], ["Vencimento", viewStudent.diaVencimento ? `Dia ${viewStudent.diaVencimento}` : "—"], ["Status", viewStudent.status]].map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{k}</div>
                 <div style={{ fontSize: 14, color: "#e2e8f0" }}>{k === "Status" ? <Badge color={STATUS_COLORS[v] || "#64748b"}>{v}</Badge> : v}</div>
@@ -523,18 +558,26 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
           </div>
           <h4 style={{ margin: "0 0 12px", fontSize: 13, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Histórico de Pagamentos</h4>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {payments.filter(p => p.alunoId === viewStudent.id).map(p => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#0f172a", borderRadius: 8, alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>Venc: {p.vencimento}</div>
-                  {p.dataPagamento && <div style={{ fontSize: 12, color: "#64748b" }}>Pago em: {p.dataPagamento}</div>}
+            {payments.filter(p => p.alunoId === viewStudent.id).sort((a, b) => (b.vencimento || "").localeCompare(a.vencimento || "")).map(p => {
+              const isOverdue = p.status !== "Pago" && p.vencimento && p.vencimento < new Date().toISOString().split("T")[0];
+              const diasAtraso = isOverdue ? Math.floor((new Date() - new Date(p.vencimento)) / 86400000) : 0;
+              return (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#0f172a", borderRadius: 8, alignItems: "center", border: `1px solid ${isOverdue ? "#ef444422" : "#334155"}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>Venc: {p.vencimento}</div>
+                    {p.dataPagamento && <div style={{ fontSize: 12, color: "#64748b" }}>Pago em: {p.dataPagamento}</div>}
+                    {isOverdue && <div style={{ fontSize: 11, color: "#ef4444" }}>{diasAtraso} dia(s) em atraso</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9" }}>R$ {Number(p.valor).toLocaleString("pt-BR")}</span>
+                    <Badge color={PAY_STATUS_COLORS[p.status]}>{p.status}</Badge>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9" }}>R$ {p.valor}</span>
-                  <Badge color={PAY_STATUS_COLORS[p.status]}>{p.status}</Badge>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+            {payments.filter(p => p.alunoId === viewStudent.id).length === 0 && (
+              <div style={{ color: "#475569", fontSize: 14, textAlign: "center", padding: "20px 0" }}>Nenhum pagamento registrado</div>
+            )}
           </div>
         </Modal>
       )}
@@ -918,13 +961,39 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
   const [form, setForm] = useState({});
   const [planForm, setPlanForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const today = new Date().toISOString().split("T")[0];
+
+  // ── Auto-atualizar Pendente → Atrasado ──
+  useEffect(() => {
+    payments.forEach(p => {
+      if (p.status === "Pendente" && p.vencimento && p.vencimento < today) {
+        updatePayment(p.id, { ...p, status: "Atrasado" });
+      }
+    });
+  }, [payments.length]); // eslint-disable-line
 
   const paidTotal = payments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const overdueTotal = payments.filter(p => p.status === "Atrasado").reduce((s, p) => s + (Number(p.valor) || 0), 0);
 
+  // Pagamentos filtrados por mês
+  const filteredPayments = useMemo(() => {
+    if (!monthFilter) return payments;
+    return payments.filter(p => (p.vencimento || "").startsWith(monthFilter));
+  }, [payments, monthFilter]);
+
+  const monthPaid = filteredPayments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const monthPending = filteredPayments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const monthOverdue = filteredPayments.filter(p => p.status === "Atrasado").reduce((s, p) => s + (Number(p.valor) || 0), 0);
+
   const registerPayment = async (payment) => {
-    await updatePayment(payment.id, { ...payment, status: "Pago", dataPagamento: new Date().toISOString().split("T")[0] });
+    await updatePayment(payment.id, { ...payment, status: "Pago", dataPagamento: today });
   };
 
   const savePayment = async () => {
@@ -953,18 +1022,61 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
     setModal(null);
   };
 
+  // Gerar mensalidades em lote para o mês selecionado
+  const gerarMensalidades = async () => {
+    const [year, month] = monthFilter.split("-").map(Number);
+    const activeStudents = students.filter(s => s.status === "Ativo" && s.planoId && s.diaVencimento);
+    if (activeStudents.length === 0) { alert("Nenhum aluno ativo com plano e dia de vencimento definidos."); return; }
+    setGenerating(true);
+    let created = 0;
+    for (const student of activeStudents) {
+      const dia = parseInt(student.diaVencimento);
+      const vencDate = new Date(year, month - 1, dia);
+      const vencimento = vencDate.toISOString().split("T")[0];
+      // Verificar se já existe mensalidade para esse aluno nesse mês
+      const exists = payments.some(p => p.alunoId === student.id && (p.vencimento || "").startsWith(monthFilter));
+      if (!exists) {
+        const plan = plans.find(p => p.id === student.planoId);
+        if (plan) {
+          await addPayment({ alunoId: student.id, planoId: student.planoId, valor: Number(plan.valor), vencimento, dataPagamento: "", status: vencimento < today ? "Atrasado" : "Pendente" });
+          created++;
+        }
+      }
+    }
+    setGenerating(false);
+    alert(`${created} mensalidade(s) gerada(s). ${activeStudents.length - created} já existiam.`);
+  };
+
+  const diasEmAtraso = (vencimento) => {
+    if (!vencimento) return 0;
+    return Math.max(0, Math.floor((new Date() - new Date(vencimento)) / 86400000));
+  };
+
+  // Opções de meses (últimos 12 + próximos 3)
+  const monthOptions = useMemo(() => {
+    const opts = [];
+    const base = new Date();
+    for (let i = -12; i <= 3; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      opts.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
+    }
+    return opts;
+  }, []);
+
   return (
     <div>
       <PageHeader title="FINANCEIRO" subtitle="Controle de mensalidades e receitas" />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
-        <StatCard label="Receita do Mês" value={`R$ ${paidTotal.toLocaleString("pt-BR")}`} icon="financial" color="#22c55e" />
-        <StatCard label="Pendente" value={`R$ ${pendingTotal.toLocaleString("pt-BR")}`} icon="alert" color="#f59e0b" />
-        <StatCard label="Em Atraso" value={`R$ ${overdueTotal.toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" />
-        <StatCard label="Total Geral" value={`R$ ${(paidTotal + pendingTotal + overdueTotal).toLocaleString("pt-BR")}`} icon="trend" color="#38bdf8" />
+        <StatCard label="Receita Total" value={`R$ ${paidTotal.toLocaleString("pt-BR")}`} icon="financial" color="#22c55e" sub="Tudo pago" />
+        <StatCard label="Pendente" value={`R$ ${pendingTotal.toLocaleString("pt-BR")}`} icon="alert" color="#f59e0b" sub="A vencer" />
+        <StatCard label="Em Atraso" value={`R$ ${overdueTotal.toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" sub={`${payments.filter(p => p.status === "Atrasado").length} cobrança(s)`} />
+        <StatCard label="Total Geral" value={`R$ ${(paidTotal + pendingTotal + overdueTotal).toLocaleString("pt-BR")}`} icon="trend" color="#38bdf8" sub="Receita esperada" />
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         {[["payments", "Mensalidades"], ["overdue", "Inadimplentes"], ["plans", "Planos"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
@@ -976,20 +1088,52 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
       {tab === "payments" && (
         <Card>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-            <Btn onClick={() => { setForm({ alunoId: "", planoId: "", valor: "", vencimento: "", dataPagamento: "", status: "Pendente" }); setModal("payment"); }}>
-              <Icon d={icons.plus} size={16} />Registrar Pagamento
-            </Btn>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)} style={{
+                background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "8px 14px",
+                color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none"
+              }}>
+                <option value="">Todos os meses</option>
+                {monthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {monthFilter && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ fontSize: 13, color: "#22c55e", fontWeight: 700 }}>✓ R$ {monthPaid.toLocaleString("pt-BR")}</span>
+                  <span style={{ fontSize: 13, color: "#f59e0b", fontWeight: 700 }}>⏳ R$ {monthPending.toLocaleString("pt-BR")}</span>
+                  <span style={{ fontSize: 13, color: "#ef4444", fontWeight: 700 }}>⚠ R$ {monthOverdue.toLocaleString("pt-BR")}</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {monthFilter && (
+                <Btn onClick={gerarMensalidades} variant="ghost" disabled={generating}>
+                  {generating ? "Gerando..." : <><Icon d={icons.plus} size={16} />Gerar Mensalidades</>}
+                </Btn>
+              )}
+              <Btn onClick={() => { setForm({ alunoId: "", planoId: "", valor: "", vencimento: "", dataPagamento: "", status: "Pendente" }); setModal("payment"); }}>
+                <Icon d={icons.plus} size={16} />Registrar Pagamento
+              </Btn>
+            </div>
           </div>
           <Table
             cols={[
               { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
               { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
-              { key: "vencimento", label: "Vencimento" },
+              {
+                key: "vencimento", label: "Vencimento", render: (v, row) => {
+                  const atrasado = row.status === "Atrasado";
+                  const dias = diasEmAtraso(v);
+                  return <div>
+                    <div style={{ color: atrasado ? "#ef4444" : "#e2e8f0" }}>{v}</div>
+                    {atrasado && <div style={{ fontSize: 11, color: "#ef4444" }}>{dias}d em atraso</div>}
+                  </div>;
+                }
+              },
               { key: "dataPagamento", label: "Pago em", render: v => v || "—" },
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
-            rows={payments}
+            rows={filteredPayments}
             onEdit={r => { setForm({ ...r }); setModal("payment"); }}
             onDelete={id => { if (confirm("Excluir pagamento?")) removePayment(id); }}
             extraActions={row => row.status !== "Pago" && (
@@ -1003,14 +1147,33 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
       {tab === "overdue" && (
         <Card>
+          <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#ef4444", textTransform: "uppercase" }}>
+            {payments.filter(p => p.status === "Atrasado" || p.status === "Pendente").length} cobrança(s) pendente(s)
+          </h3>
           <Table
             cols={[
-              { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
+              {
+                key: "alunoId", label: "Aluno", render: v => {
+                  const s = students.find(s => s.id === v);
+                  return <div>
+                    <div style={{ fontWeight: 600 }}>{s?.nome || v}</div>
+                    {s?.telefone && <div style={{ fontSize: 11, color: "#64748b" }}>{s.telefone}</div>}
+                  </div>;
+                }
+              },
               { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
-              { key: "vencimento", label: "Vencimento" },
+              {
+                key: "vencimento", label: "Vencimento", render: (v, row) => {
+                  const dias = diasEmAtraso(v);
+                  return <div>
+                    <div style={{ color: row.status === "Atrasado" ? "#ef4444" : "#f59e0b" }}>{v}</div>
+                    {dias > 0 && <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>{dias} dia(s)</div>}
+                  </div>;
+                }
+              },
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
-            rows={payments.filter(p => p.status === "Atrasado" || p.status === "Pendente")}
+            rows={payments.filter(p => p.status === "Atrasado" || p.status === "Pendente").sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""))}
             onEdit={null} onDelete={null}
             extraActions={row => (
               <Btn onClick={() => registerPayment(row)} variant="success" size="sm">
@@ -1029,19 +1192,23 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
             </Btn>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-            {plans.map(p => (
-              <div key={p.id} style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{p.nome}</h3>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn onClick={() => { setPlanForm(p); setModal("plan"); }} variant="ghost" size="sm"><Icon d={icons.edit} size={14} /></Btn>
-                    <Btn onClick={() => { if (confirm("Excluir plano?")) removePlan(p.id); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
+            {plans.map(p => {
+              const alunosNoPlan = students.filter(s => s.planoId === p.id).length;
+              return (
+                <div key={p.id} style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{p.nome}</h3>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Btn onClick={() => { setPlanForm(p); setModal("plan"); }} variant="ghost" size="sm"><Icon d={icons.edit} size={14} /></Btn>
+                      <Btn onClick={() => { if (confirm("Excluir plano?")) removePlan(p.id); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
+                    </div>
                   </div>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>R$ {p.valor}</div>
+                  <div style={{ fontSize: 13, color: "#64748b" }}>{p.frequencia}x por semana</div>
+                  <div style={{ marginTop: 10, fontSize: 12, color: "#475569" }}>{alunosNoPlan} aluno(s) neste plano</div>
                 </div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>R$ {p.valor}</div>
-                <div style={{ fontSize: 13, color: "#64748b" }}>{p.frequencia}x por semana</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
@@ -1050,9 +1217,16 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
         <Modal title={form.id ? "Editar Pagamento" : "Novo Pagamento"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div style={{ gridColumn: "1/-1" }}>
-              <Input label="Aluno" value={form.alunoId || ""} onChange={v => setForm(p => ({ ...p, alunoId: v }))} options={students.map(s => ({ value: s.id, label: s.nome }))} />
+              <Input label="Aluno" value={form.alunoId || ""} onChange={v => {
+                const student = students.find(s => s.id === v);
+                const plan = student?.planoId ? plans.find(p => p.id === student.planoId) : null;
+                setForm(p => ({ ...p, alunoId: v, planoId: student?.planoId || p.planoId, valor: plan ? String(plan.valor) : p.valor }));
+              }} options={students.map(s => ({ value: s.id, label: s.nome }))} />
             </div>
-            <Input label="Plano" value={form.planoId || ""} onChange={v => setForm(p => ({ ...p, planoId: v }))} options={plans.map(p => ({ value: p.id, label: p.nome }))} />
+            <Input label="Plano" value={form.planoId || ""} onChange={v => {
+              const plan = plans.find(p => p.id === v);
+              setForm(p => ({ ...p, planoId: v, valor: plan ? String(plan.valor) : p.valor }));
+            }} options={plans.map(p => ({ value: p.id, label: p.nome }))} />
             <Input label="Valor (R$)" type="number" value={String(form.valor || "")} onChange={v => setForm(p => ({ ...p, valor: v }))} />
             <Input label="Vencimento" type="date" value={form.vencimento || ""} onChange={v => setForm(p => ({ ...p, vencimento: v }))} />
             <Input label="Data Pagamento" type="date" value={form.dataPagamento || ""} onChange={v => setForm(p => ({ ...p, dataPagamento: v }))} />

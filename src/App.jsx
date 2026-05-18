@@ -1,5 +1,74 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, createContext, useContext, useCallback } from "react";
 import { supabase, toDb, fromDb } from "./supabase";
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+const formatDate = (d) => {
+  if (!d) return "—";
+  const parts = d.split("-");
+  if (parts.length !== 3) return d;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+};
+
+const formatMoney = (v) => {
+  const n = Number(v);
+  if (isNaN(n)) return "R$ 0,00";
+  return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const maskCPF = (v) => v.replace(/\D/g, "").slice(0, 11)
+  .replace(/(\d{3})(\d)/, "$1.$2")
+  .replace(/(\d{3})(\d)/, "$1.$2")
+  .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+
+const maskPhone = (v) => {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 10) return d.replace(/(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
+  return d.replace(/(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
+};
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+const ToastContext = createContext(() => {});
+const useToast = () => useContext(ToastContext);
+
+function ToastContainer({ toasts }) {
+  if (!toasts.length) return null;
+  return (
+    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 3000, display: "flex", flexDirection: "column-reverse", gap: 8, maxWidth: 360, width: "calc(100vw - 48px)" }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          background: "#1e293b",
+          borderLeft: `3px solid ${t.type === "error" ? "#ef4444" : t.type === "success" ? "#22c55e" : "#38bdf8"}`,
+          border: `1px solid ${t.type === "error" ? "#ef444444" : t.type === "success" ? "#22c55e44" : "#334155"}`,
+          borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#e2e8f0",
+          boxShadow: "0 8px 32px #00000066", display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <span style={{ color: t.type === "error" ? "#ef4444" : t.type === "success" ? "#22c55e" : "#38bdf8", flexShrink: 0 }}>
+            {t.type === "error" ? "✕" : "✓"}
+          </span>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── CONFIRM HOOK ─────────────────────────────────────────────────────────────
+function useConfirm() {
+  const [state, setState] = useState(null);
+  const confirm = useCallback((message) => new Promise(resolve => setState({ message, resolve })), []);
+  const ConfirmUI = state ? (
+    <div style={{ position: "fixed", inset: 0, background: "#00000099", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 16, width: "100%", maxWidth: 360, padding: 28 }}>
+        <p style={{ margin: "0 0 24px", fontSize: 15, color: "#cbd5e1", lineHeight: 1.6 }}>{state.message}</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn onClick={() => { state.resolve(false); setState(null); }} variant="ghost">Cancelar</Btn>
+          <Btn onClick={() => { state.resolve(true); setState(null); }} variant="danger">Confirmar</Btn>
+        </div>
+      </div>
+    </div>
+  ) : null;
+  return { confirm, ConfirmUI };
+}
 
 // ─── SUPABASE TABLE HOOK ──────────────────────────────────────────────────────
 function useTable(tableName) {
@@ -11,6 +80,7 @@ function useTable(tableName) {
       .from(tableName)
       .select("*")
       .order("created_at", { ascending: true })
+      .limit(500)
       .then(({ data, error }) => {
         if (error) console.error(`[${tableName}] fetch error:`, error.message);
         else setRows((data || []).map(fromDb));
@@ -88,6 +158,8 @@ const icons = {
   users: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
   trend: "M23 6l-9.5 9.5-5-5L1 18",
   belt: "M2 12h20 M12 2v20",
+  whatsapp: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z",
+  key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
 };
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
@@ -315,6 +387,42 @@ function LoginScreen() {
   );
 }
 
+// ─── CHANGE PASSWORD MODAL ───────────────────────────────────────────────────
+function ChangePasswordModal({ onClose }) {
+  const toast = useToast();
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSave = async () => {
+    if (!newPass || !confirmPass) { setErr("Preencha todos os campos."); return; }
+    if (newPass !== confirmPass) { setErr("As senhas não coincidem."); return; }
+    if (newPass.length < 6) { setErr("A senha deve ter pelo menos 6 caracteres."); return; }
+    setLoading(true);
+    setErr("");
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    setLoading(false);
+    if (error) { setErr(error.message); return; }
+    toast("Senha alterada com sucesso!", "success");
+    onClose();
+  };
+
+  return (
+    <Modal title="Alterar Senha" onClose={onClose} width={400}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Input label="Nova Senha" type="password" value={newPass} onChange={setNewPass} placeholder="Mínimo 6 caracteres" />
+        <Input label="Confirmar Nova Senha" type="password" value={confirmPass} onChange={setConfirmPass} placeholder="Repita a senha" />
+        {err && <div style={{ background: "#ef444422", border: "1px solid #ef444433", borderRadius: 8, padding: "10px 14px", color: "#ef4444", fontSize: 13 }}>{err}</div>}
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+        <Btn onClick={onClose} variant="ghost">Cancelar</Btn>
+        <Btn onClick={handleSave} disabled={loading}><Icon d={icons.key} size={16} />{loading ? "Salvando..." : "Alterar Senha"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── PAGE HEADER ──────────────────────────────────────────────────────────────
 const PageHeader = ({ title, subtitle, action }) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -349,8 +457,8 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
         <StatCard label="Novos no Ano" value={thisYear} icon="trend" color="#22c55e" sub="Este ano" />
         <StatCard label="Professores" value={totalTeachers} icon="teachers" color="#a78bfa" sub="Ativos na academia" />
         <StatCard label="Aulas na Semana" value={weekClasses} icon="classes" color="#f59e0b" sub={`${todayClasses.length} hoje`} />
-        <StatCard label="Receita do Mês" value={`R$ ${monthRevenue.toLocaleString("pt-BR")}`} icon="financial" color="#34d399" sub="Mensalidades pagas" />
-        <StatCard label="Em Atraso" value={`R$ ${overdueAmount.toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" sub="Mensalidades atrasadas" />
+        <StatCard label="Receita do Mês" value={formatMoney(monthRevenue)} icon="financial" color="#34d399" sub="Mensalidades pagas" />
+        <StatCard label="Em Atraso" value={formatMoney(overdueAmount)} icon="alert" color="#ef4444" sub="Mensalidades atrasadas" />
         <StatCard label="Modalidades" value={modalities.length} icon="modalities" color="#38bdf8" sub="Artes marciais" />
       </div>
 
@@ -395,6 +503,8 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
 function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment }) {
+  const toast = useToast();
+  const { confirm, ConfirmUI } = useConfirm();
   const [search, setSearch] = useState("");
   const [filterModal, setFilterModal] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -445,10 +555,14 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
     }
     setSaving(false);
     setModal(null);
+    toast(form.id ? "Aluno atualizado!" : "Aluno cadastrado!", "success");
   };
 
   const del = async (id) => {
-    if (confirm("Excluir aluno?")) await removeStudent(id);
+    if (await confirm("Deseja excluir este aluno? Esta ação não pode ser desfeita.")) {
+      const ok = await removeStudent(id);
+      if (ok) toast("Aluno excluído.", "success");
+    }
   };
 
   const statusOpts = ["Ativo", "Inativo", "Suspenso", "Inadimplente"].map(s => ({ value: s, label: s }));
@@ -488,7 +602,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
             { key: "nome", label: "Nome" },
             { key: "modalidade", label: "Modalidade" },
             { key: "telefone", label: "Telefone" },
-            { key: "dataMatricula", label: "Matrícula" },
+            { key: "dataMatricula", label: "Matrícula", render: v => formatDate(v) },
             { key: "status", label: "Status", render: v => <Badge color={STATUS_COLORS[v] || "#64748b"}>{v}</Badge> },
           ]}
           rows={filtered}
@@ -506,9 +620,9 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
         <Modal title={form.id ? "Editar Aluno" : "Novo Aluno"} onClose={() => setModal(null)} width={640}>
           <div className="grid-2col">
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
-            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} placeholder="000.000.000-00" />
+            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: maskCPF(v) }))} placeholder="000.000.000-00" />
             <Input label="Data de Nascimento" type="date" value={form.dataNascimento || ""} onChange={v => setForm(p => ({ ...p, dataNascimento: v }))} />
-            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: v }))} placeholder="(00) 00000-0000" />
+            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: maskPhone(v) }))} placeholder="(00) 00000-0000" />
             <Input label="Email" type="email" value={form.email || ""} onChange={v => setForm(p => ({ ...p, email: v }))} />
             <div style={{ gridColumn: "1/-1" }}><Input label="Endereço" value={form.endereco || ""} onChange={v => setForm(p => ({ ...p, endereco: v }))} /></div>
             <Input label="Data de Matrícula" type="date" value={form.dataMatricula || ""} onChange={v => setForm(p => ({ ...p, dataMatricula: v }))} />
@@ -566,12 +680,15 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
           </div>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
 
 // ─── TEACHERS ────────────────────────────────────────────────────────────────
 function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, modalities, classes }) {
+  const toast = useToast();
+  const { confirm, ConfirmUI } = useConfirm();
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [search, setSearch] = useState("");
@@ -587,17 +704,17 @@ function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, moda
   const save = async () => {
     if (!form.nome) return;
     setSaving(true);
-    if (form.id) {
-      await updateTeacher(form.id, form);
-    } else {
-      await addTeacher(form);
-    }
+    if (form.id) { await updateTeacher(form.id, form); } else { await addTeacher(form); }
     setSaving(false);
     setModal(null);
+    toast(form.id ? "Professor atualizado!" : "Professor cadastrado!", "success");
   };
 
   const del = async (id) => {
-    if (confirm("Excluir professor?")) await removeTeacher(id);
+    if (await confirm("Deseja excluir este professor?")) {
+      const ok = await removeTeacher(id);
+      if (ok) toast("Professor excluído.", "success");
+    }
   };
 
   return (
@@ -620,7 +737,7 @@ function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, moda
             { key: "modalidade", label: "Modalidade" },
             { key: "telefone", label: "Telefone" },
             { key: "email", label: "Email" },
-            { key: "dataContratacao", label: "Contratação" },
+            { key: "dataContratacao", label: "Contratação", render: v => formatDate(v) },
             { key: "status", label: "Status", render: v => <Badge color={v === "Ativo" ? "#22c55e" : "#64748b"}>{v}</Badge> },
           ]}
           rows={filtered}
@@ -637,8 +754,8 @@ function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, moda
         <Modal title={form.id ? "Editar Professor" : "Novo Professor"} onClose={() => setModal(null)}>
           <div className="grid-2col">
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
-            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} />
-            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: v }))} />
+            <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: maskCPF(v) }))} />
+            <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: maskPhone(v) }))} />
             <Input label="Email" type="email" value={form.email || ""} onChange={v => setForm(p => ({ ...p, email: v }))} />
             <Input label="Modalidade" value={form.modalidade || ""} onChange={v => setForm(p => ({ ...p, modalidade: v }))} options={modalities.map(m => ({ value: m.nome, label: m.nome }))} />
             <Input label="Data de Contratação" type="date" value={form.dataContratacao || ""} onChange={v => setForm(p => ({ ...p, dataContratacao: v }))} />
@@ -650,12 +767,15 @@ function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, moda
           </div>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
 
 // ─── MODALITIES ───────────────────────────────────────────────────────────────
 function ModalitiesPage({ modalities, addModality, updateModality, removeModality }) {
+  const toast = useToast();
+  const { confirm, ConfirmUI } = useConfirm();
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -665,17 +785,17 @@ function ModalitiesPage({ modalities, addModality, updateModality, removeModalit
   const save = async () => {
     if (!form.nome) return;
     setSaving(true);
-    if (form.id) {
-      await updateModality(form.id, form);
-    } else {
-      await addModality(form);
-    }
+    if (form.id) { await updateModality(form.id, form); } else { await addModality(form); }
     setSaving(false);
     setModal(null);
+    toast(form.id ? "Modalidade atualizada!" : "Modalidade cadastrada!", "success");
   };
 
   const del = async (id) => {
-    if (confirm("Excluir modalidade?")) await removeModality(id);
+    if (await confirm("Deseja excluir esta modalidade?")) {
+      const ok = await removeModality(id);
+      if (ok) toast("Modalidade excluída.", "success");
+    }
   };
 
   const nivelColor = { "Iniciante": "#22c55e", "Intermediário": "#f59e0b", "Avançado": "#ef4444", "Todos": "#38bdf8" };
@@ -721,12 +841,15 @@ function ModalitiesPage({ modalities, addModality, updateModality, removeModalit
           </div>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
 
 // ─── CLASSES ──────────────────────────────────────────────────────────────────
 function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, modalities }) {
+  const toast = useToast();
+  const { confirm, ConfirmUI } = useConfirm();
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -740,17 +863,17 @@ function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, mo
     if (!form.modalidadeId || !form.professorId) return;
     const entry = { ...form, capacidade: Number(form.capacidade) };
     setSaving(true);
-    if (form.id) {
-      await updateClass(form.id, entry);
-    } else {
-      await addClass(entry);
-    }
+    if (form.id) { await updateClass(form.id, entry); } else { await addClass(entry); }
     setSaving(false);
     setModal(null);
+    toast(form.id ? "Aula atualizada!" : "Aula cadastrada!", "success");
   };
 
   const del = async (id) => {
-    if (confirm("Excluir aula?")) await removeClass(id);
+    if (await confirm("Deseja excluir esta aula?")) {
+      const ok = await removeClass(id);
+      if (ok) toast("Aula excluída.", "success");
+    }
   };
 
   return (
@@ -791,6 +914,7 @@ function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, mo
           </div>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
@@ -953,7 +1077,9 @@ function AttendancePage({ classes, students, teachers, modalities }) {
 }
 
 // ─── FINANCIAL ────────────────────────────────────────────────────────────────
-function FinancialPage({ payments, addPayment, updatePayment, removePayment, students, plans, addPlan, updatePlan, removePlan }) {
+function FinancialPage({ payments, addPayment, updatePayment, removePayment, students, updateStudent, plans, addPlan, updatePlan, removePlan }) {
+  const toast = useToast();
+  const { confirm, ConfirmUI } = useConfirm();
   const [tab, setTab] = useState("payments");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -973,9 +1099,14 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
     const toUpdate = payments.filter(
       p => p.status === "Pendente" && p.vencimento && p.vencimento < today && !autoUpdatedRef.current.has(p.id)
     );
-    toUpdate.forEach(p => {
+    toUpdate.forEach(async p => {
       autoUpdatedRef.current.add(p.id);
-      updatePayment(p.id, { ...p, status: "Atrasado" });
+      await updatePayment(p.id, { ...p, status: "Atrasado" });
+      // Marcar aluno como Inadimplente se ainda estiver Ativo
+      const student = students.find(s => s.id === p.alunoId);
+      if (student && student.status === "Ativo") {
+        await updateStudent(student.id, { ...student, status: "Inadimplente" });
+      }
     });
   }, [payments]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -995,39 +1126,43 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
   const registerPayment = async (payment) => {
     await updatePayment(payment.id, { ...payment, status: "Pago", dataPagamento: today });
+    toast("Pagamento baixado!", "success");
+    // Reativar aluno se não tiver mais pagamentos atrasados
+    const student = students.find(s => s.id === payment.alunoId);
+    if (student && student.status === "Inadimplente") {
+      const stillOverdue = payments.some(p => p.id !== payment.id && p.alunoId === payment.alunoId && p.status === "Atrasado");
+      if (!stillOverdue) {
+        await updateStudent(student.id, { ...student, status: "Ativo" });
+        toast(`${student.nome?.split(" ")[0]} reativado como Ativo.`, "success");
+      }
+    }
   };
 
   const savePayment = async () => {
     if (!form.alunoId) return;
     const entry = { ...form, valor: Number(form.valor) };
     setSaving(true);
-    if (form.id) {
-      await updatePayment(form.id, entry);
-    } else {
-      await addPayment(entry);
-    }
+    if (form.id) { await updatePayment(form.id, entry); } else { await addPayment(entry); }
     setSaving(false);
     setModal(null);
+    toast(form.id ? "Pagamento atualizado!" : "Pagamento registrado!", "success");
   };
 
   const savePlan = async () => {
     if (!planForm.nome) return;
     const entry = { ...planForm, valor: Number(planForm.valor), frequencia: Number(planForm.frequencia) };
     setSaving(true);
-    if (planForm.id) {
-      await updatePlan(planForm.id, entry);
-    } else {
-      await addPlan(entry);
-    }
+    if (planForm.id) { await updatePlan(planForm.id, entry); } else { await addPlan(entry); }
     setSaving(false);
     setModal(null);
+    toast(planForm.id ? "Plano atualizado!" : "Plano criado!", "success");
   };
 
   // Gerar mensalidades em lote para o mês selecionado
   const gerarMensalidades = async () => {
     const [year, month] = monthFilter.split("-").map(Number);
     const activeStudents = students.filter(s => s.status === "Ativo" && s.planoId && s.diaVencimento);
-    if (activeStudents.length === 0) { alert("Nenhum aluno ativo com plano e dia de vencimento definidos."); return; }
+    if (activeStudents.length === 0) { toast("Nenhum aluno ativo com plano e dia de vencimento definidos.", "error"); return; }
     setGenerating(true);
 
     const toCreate = activeStudents.reduce((acc, student) => {
@@ -1043,7 +1178,7 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
     await Promise.all(toCreate.map(addPayment));
     setGenerating(false);
-    alert(`${toCreate.length} mensalidade(s) gerada(s). ${activeStudents.length - toCreate.length} já existiam.`);
+    toast(`${toCreate.length} mensalidade(s) gerada(s). ${activeStudents.length - toCreate.length} já existiam.`, "success");
   };
 
   const diasEmAtraso = (vencimento) => {
@@ -1118,23 +1253,23 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
           <Table
             cols={[
               { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
-              { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
+              { key: "valor", label: "Valor", render: v => formatMoney(v) },
               {
                 key: "vencimento", label: "Vencimento", render: (v, row) => {
                   const atrasado = row.status === "Atrasado";
                   const dias = diasEmAtraso(v);
                   return <div>
-                    <div style={{ color: atrasado ? "#ef4444" : "#e2e8f0" }}>{v}</div>
+                    <div style={{ color: atrasado ? "#ef4444" : "#e2e8f0" }}>{formatDate(v)}</div>
                     {atrasado && <div style={{ fontSize: 11, color: "#ef4444" }}>{dias}d em atraso</div>}
                   </div>;
                 }
               },
-              { key: "dataPagamento", label: "Pago em", render: v => v || "—" },
+              { key: "dataPagamento", label: "Pago em", render: v => formatDate(v) },
               { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
             ]}
             rows={filteredPayments}
             onEdit={r => { setForm({ ...r }); setModal("payment"); }}
-            onDelete={id => { if (confirm("Excluir pagamento?")) removePayment(id); }}
+            onDelete={async id => { if (await confirm("Deseja excluir este pagamento?")) { const ok = await removePayment(id); if (ok) toast("Pagamento excluído.", "success"); } }}
             extraActions={row => row.status !== "Pago" && (
               <Btn onClick={() => registerPayment(row)} variant="success" size="sm">
                 <Icon d={icons.check} size={14} />Pago
@@ -1160,12 +1295,12 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
                   </div>;
                 }
               },
-              { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
+              { key: "valor", label: "Valor", render: v => formatMoney(v) },
               {
                 key: "vencimento", label: "Vencimento", render: (v, row) => {
                   const dias = diasEmAtraso(v);
                   return <div>
-                    <div style={{ color: row.status === "Atrasado" ? "#ef4444" : "#f59e0b" }}>{v}</div>
+                    <div style={{ color: row.status === "Atrasado" ? "#ef4444" : "#f59e0b" }}>{formatDate(v)}</div>
                     {dias > 0 && <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>{dias} dia(s)</div>}
                   </div>;
                 }
@@ -1174,11 +1309,21 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
             ]}
             rows={payments.filter(p => p.status === "Atrasado" || p.status === "Pendente").sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""))}
             onEdit={null} onDelete={null}
-            extraActions={row => (
-              <Btn onClick={() => registerPayment(row)} variant="success" size="sm">
-                <Icon d={icons.check} size={14} />Baixar
-              </Btn>
-            )}
+            extraActions={row => {
+              const student = students.find(s => s.id === row.alunoId);
+              const phone = (student?.telefone || "").replace(/\D/g, "");
+              const msg = encodeURIComponent(`Olá ${student?.nome?.split(" ")[0] || ""}! Temos uma mensalidade em aberto de ${formatMoney(row.valor)} com vencimento em ${formatDate(row.vencimento)}. Por favor, entre em contato para regularizar. Obrigado!`);
+              return (
+                <div style={{ display: "flex", gap: 6 }}>
+                  {phone && (
+                    <a href={`https://wa.me/55${phone}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                      <Btn variant="success" size="sm"><Icon d={icons.whatsapp} size={14} />WhatsApp</Btn>
+                    </a>
+                  )}
+                  <Btn onClick={() => registerPayment(row)} variant="ghost" size="sm"><Icon d={icons.check} size={14} />Baixar</Btn>
+                </div>
+              );
+            }}
           />
         </Card>
       )}
@@ -1199,10 +1344,10 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
                     <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#f1f5f9" }}>{p.nome}</h3>
                     <div style={{ display: "flex", gap: 6 }}>
                       <Btn onClick={() => { setPlanForm(p); setModal("plan"); }} variant="ghost" size="sm"><Icon d={icons.edit} size={14} /></Btn>
-                      <Btn onClick={() => { if (confirm("Excluir plano?")) removePlan(p.id); }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
+                      <Btn onClick={async () => { if (await confirm("Deseja excluir este plano?")) { const ok = await removePlan(p.id); if (ok) toast("Plano excluído.", "success"); } }} variant="danger" size="sm"><Icon d={icons.delete} size={14} /></Btn>
                     </div>
                   </div>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>R$ {p.valor}</div>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: "#38bdf8", marginBottom: 4 }}>{formatMoney(p.valor)}</div>
                   <div style={{ fontSize: 13, color: "#64748b" }}>{p.frequencia}x por semana</div>
                   <div style={{ marginTop: 10, fontSize: 12, color: "#475569" }}>{alunosNoPlan} aluno(s) neste plano</div>
                 </div>
@@ -1251,6 +1396,53 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
           </div>
         </Modal>
       )}
+      {ConfirmUI}
+    </div>
+  );
+}
+
+// ─── REVENUE CHART ────────────────────────────────────────────────────────────
+function RevenueChart({ payments }) {
+  const months = useMemo(() => {
+    const result = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+      const revenue = payments
+        .filter(p => p.status === "Pago" && (p.vencimento || "").startsWith(key))
+        .reduce((s, p) => s + (Number(p.valor) || 0), 0);
+      result.push({ key, label, revenue });
+    }
+    return result;
+  }, [payments]);
+
+  const max = Math.max(...months.map(m => m.revenue), 1);
+  const barW = 48, gap = 16, H = 130, padH = 32;
+  const totalW = months.length * (barW + gap) + gap;
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg width="100%" viewBox={`0 0 ${totalW} ${H + padH}`} style={{ display: "block", minWidth: 280 }}>
+        {months.map((m, i) => {
+          const x = gap + i * (barW + gap);
+          const barH = Math.max((m.revenue / max) * H, m.revenue > 0 ? 4 : 0);
+          const y = H - barH;
+          return (
+            <g key={m.key}>
+              <rect x={x} y={y} width={barW} height={barH} rx={4} fill="#38bdf822" stroke="#38bdf8" strokeWidth={1} />
+              <text x={x + barW / 2} y={H + 18} textAnchor="middle" fill="#64748b" fontSize={11} fontFamily="sans-serif">{m.label}</text>
+              {m.revenue > 0 && (
+                <text x={x + barW / 2} y={Math.max(y - 5, 12)} textAnchor="middle" fill="#38bdf8" fontSize={10} fontFamily="sans-serif" fontWeight="700">
+                  {m.revenue >= 1000 ? `${(m.revenue / 1000).toFixed(1)}k` : m.revenue}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -1348,17 +1540,21 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
       {tab === "financial" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-            <StatCard label="Receita do Mês" value={`R$ ${monthRevenue.toLocaleString("pt-BR")}`} icon="financial" color="#22c55e" />
-            <StatCard label="Atrasadas" value={`R$ ${overduePayments.reduce((s, p) => s + (Number(p.valor) || 0), 0).toLocaleString("pt-BR")}`} icon="alert" color="#ef4444" />
+            <StatCard label="Receita Total Paga" value={formatMoney(monthRevenue)} icon="financial" color="#22c55e" />
+            <StatCard label="Em Atraso" value={formatMoney(overduePayments.reduce((s, p) => s + (Number(p.valor) || 0), 0))} icon="alert" color="#ef4444" />
             <StatCard label="Qtd Inadimplentes" value={overduePayments.length} icon="users" color="#f59e0b" />
           </div>
+          <Card>
+            <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Receita dos últimos 6 meses</h3>
+            <RevenueChart payments={payments} />
+          </Card>
           <Card>
             <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Mensalidades em Atraso</h3>
             <Table
               cols={[
                 { key: "alunoId", label: "Aluno", render: v => students.find(s => s.id === v)?.nome || v },
-                { key: "valor", label: "Valor", render: v => `R$ ${Number(v).toLocaleString("pt-BR")}` },
-                { key: "vencimento", label: "Vencimento" },
+                { key: "valor", label: "Valor", render: v => formatMoney(v) },
+                { key: "vencimento", label: "Vencimento", render: v => formatDate(v) },
                 { key: "status", label: "Status", render: v => <Badge color={PAY_STATUS_COLORS[v]}>{v}</Badge> },
               ]}
               rows={overduePayments}
@@ -1416,6 +1612,14 @@ function AuthenticatedApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const isMobile = useIsMobile();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
 
   // ── Supabase tables ──
   const { rows: students, loading: sl, add: addStudent, update: updateStudent, remove: removeStudent } = useTable("students");
@@ -1454,6 +1658,7 @@ function AuthenticatedApp() {
   };
 
   return (
+    <ToastContext.Provider value={addToast}>
     <div style={{ minHeight: "100vh", background: "#0f172a", fontFamily: "'Barlow', sans-serif", color: "#e2e8f0", display: "flex" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;800;900&display=swap');
@@ -1576,6 +1781,14 @@ function AuthenticatedApp() {
               {sidebarOpen && "Recolher"}
             </button>
           )}
+          <button onClick={() => setShowChangePwd(true)} style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+            borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
+            color: "#475569", fontFamily: "inherit", fontSize: 12, marginBottom: 2, whiteSpace: "nowrap"
+          }}>
+            <Icon d={icons.key} size={18} />
+            {showLabel && "Alterar Senha"}
+          </button>
           <button onClick={() => supabase.auth.signOut()} style={{
             width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
             borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
@@ -1595,6 +1808,10 @@ function AuthenticatedApp() {
       }}>
         {pages[page] || <div>Página não encontrada</div>}
       </main>
+
+      {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+      <ToastContainer toasts={toasts} />
     </div>
+    </ToastContext.Provider>
   );
 }

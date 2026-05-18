@@ -1,21 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import crypto from "crypto-js";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase, toDb, fromDb } from "./supabase";
-
-// main.jsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-
-// Reset global
-const style = document.createElement('style')
-style.textContent = `*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } html, body, #root { height: 100%; width: 100%; } body { margin: 0; }`
-document.head.appendChild(style)
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
 
 // ─── SUPABASE TABLE HOOK ──────────────────────────────────────────────────────
 function useTable(tableName) {
@@ -260,22 +244,22 @@ function LoadingScreen() {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }) {
-  const [user, setUser] = useState("");
+function LoginScreen() {
+  const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const HASHED_PASSWORD = "5395546dfb06c37bc99889acce742b0bd5e1d48916ad4c9afa120a884c43966a";
-
-  const handleLogin = () => {
-    if (!user || !pass) { setErr("Preencha todos os campos."); return; }
-    const passHash = crypto.SHA256(pass).toString();
-    if (user === "admin" && passHash === HASHED_PASSWORD) {
-      onLogin();
-    } else {
-      setErr("Usuário ou senha inválidos");
+  const handleLogin = async () => {
+    if (!email || !pass) { setErr("Preencha todos os campos."); return; }
+    setLoading(true);
+    setErr("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) {
+      setErr("Email ou senha inválidos.");
+      setLoading(false);
     }
+    // Sucesso: onAuthStateChange no App atualiza a sessão automaticamente
   };
 
   return (
@@ -312,8 +296,9 @@ function LoginScreen({ onLogin }) {
         </div>
 
         <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Input label="Usuário" value={user} onChange={setUser} placeholder="Digite seu usuário" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}
+            onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}>
+            <Input label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@academia.com" />
             <Input label="Senha" type="password" value={pass} onChange={setPass} placeholder="••••••••" />
             {err && (
               <div style={{ background: "#ef444422", border: "1px solid #ef444433", borderRadius: 8, padding: "10px 14px", color: "#ef4444", fontSize: 13 }}>
@@ -346,7 +331,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
   const totalStudents = students.length;
   const activeStudents = students.filter(s => s.status === "Ativo").length;
   const delinquents = students.filter(s => s.status === "Inadimplente").length;
-  const thisMonth = students.filter(s => s.dataMatricula?.startsWith(new Date().getFullYear().toString())).length;
+  const thisYear = students.filter(s => s.dataMatricula?.startsWith(new Date().getFullYear().toString())).length;
   const totalTeachers = teachers.length;
   const weekClasses = classes.length;
   const todayDay = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][new Date().getDay()];
@@ -361,7 +346,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
         <StatCard label="Total de Alunos" value={totalStudents} icon="students" color="#38bdf8" sub={`${activeStudents} ativos`} />
         <StatCard label="Alunos Inadimplentes" value={delinquents} icon="alert" color="#ef4444" sub="Requer atenção" />
-        <StatCard label="Novos no Ano" value={thisMonth} icon="trend" color="#22c55e" sub="Este ano" />
+        <StatCard label="Novos no Ano" value={thisYear} icon="trend" color="#22c55e" sub="Este ano" />
         <StatCard label="Professores" value={totalTeachers} icon="teachers" color="#a78bfa" sub="Ativos na academia" />
         <StatCard label="Aulas na Semana" value={weekClasses} icon="classes" color="#f59e0b" sub={`${todayClasses.length} hoje`} />
         <StatCard label="Receita do Mês" value={`R$ ${monthRevenue.toLocaleString("pt-BR")}`} icon="financial" color="#34d399" sub="Mensalidades pagas" />
@@ -771,7 +756,7 @@ function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, mo
   return (
     <div>
       <PageHeader title="AULAS" subtitle={`${classes.length} aulas cadastradas`}
-        action={<Btn onClick={() => { openNew(); setModal("form"); }}><Icon d={icons.plus} size={16} />Nova Aula</Btn>} />
+        action={<Btn onClick={openNew}><Icon d={icons.plus} size={16} />Nova Aula</Btn>} />
 
       <Card>
         <Table
@@ -865,9 +850,11 @@ function SchedulePage({ classes, teachers, modalities }) {
 
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
 function AttendancePage({ classes, students, teachers, modalities }) {
+  const { add: addAttendance } = useTable("attendance");
   const [selectedClass, setSelectedClass] = useState("");
   const [attendance, setAttendance] = useState({});
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const cls = classes.find(c => c.id === selectedClass);
   const mod = cls && modalities.find(m => m.id === cls.modalidadeId);
@@ -875,7 +862,18 @@ function AttendancePage({ classes, students, teachers, modalities }) {
 
   const toggle = id => { setAttendance(prev => ({ ...prev, [id]: !prev[id] })); setSaved(false); };
 
-  const saveAttendance = () => {
+  const saveAttendance = async () => {
+    if (!cls) return;
+    setSaving(true);
+    const date = new Date().toISOString().split("T")[0];
+    const records = classStudents.map(s => ({
+      classId: cls.id,
+      studentId: s.id,
+      date,
+      present: !!attendance[s.id],
+    }));
+    await Promise.all(records.map(addAttendance));
+    setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -935,8 +933,8 @@ function AttendancePage({ classes, students, teachers, modalities }) {
                 );
               })}
             </div>
-            <Btn onClick={saveAttendance} variant={saved ? "success" : "primary"}>
-              {saved ? <><Icon d={icons.check} size={16} />Presença Salva!</> : <><Icon d={icons.check} size={16} />Confirmar Presença</>}
+            <Btn onClick={saveAttendance} disabled={saving} variant={saved ? "success" : "primary"}>
+              {saving ? "Salvando..." : saved ? <><Icon d={icons.check} size={16} />Presença Salva!</> : <><Icon d={icons.check} size={16} />Confirmar Presença</>}
             </Btn>
           </Card>
         </>
@@ -969,14 +967,17 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
   const today = new Date().toISOString().split("T")[0];
 
-  // ── Auto-atualizar Pendente → Atrasado ──
+  // ── Auto-atualizar Pendente → Atrasado (cada ID processado no máximo uma vez por sessão) ──
+  const autoUpdatedRef = useRef(new Set());
   useEffect(() => {
-    payments.forEach(p => {
-      if (p.status === "Pendente" && p.vencimento && p.vencimento < today) {
-        updatePayment(p.id, { ...p, status: "Atrasado" });
-      }
+    const toUpdate = payments.filter(
+      p => p.status === "Pendente" && p.vencimento && p.vencimento < today && !autoUpdatedRef.current.has(p.id)
+    );
+    toUpdate.forEach(p => {
+      autoUpdatedRef.current.add(p.id);
+      updatePayment(p.id, { ...p, status: "Atrasado" });
     });
-  }, [payments.length]); // eslint-disable-line
+  }, [payments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const paidTotal = payments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
@@ -1028,23 +1029,21 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
     const activeStudents = students.filter(s => s.status === "Ativo" && s.planoId && s.diaVencimento);
     if (activeStudents.length === 0) { alert("Nenhum aluno ativo com plano e dia de vencimento definidos."); return; }
     setGenerating(true);
-    let created = 0;
-    for (const student of activeStudents) {
-      const dia = parseInt(student.diaVencimento);
-      const vencDate = new Date(year, month - 1, dia);
-      const vencimento = vencDate.toISOString().split("T")[0];
-      // Verificar se já existe mensalidade para esse aluno nesse mês
+
+    const toCreate = activeStudents.reduce((acc, student) => {
       const exists = payments.some(p => p.alunoId === student.id && (p.vencimento || "").startsWith(monthFilter));
-      if (!exists) {
-        const plan = plans.find(p => p.id === student.planoId);
-        if (plan) {
-          await addPayment({ alunoId: student.id, planoId: student.planoId, valor: Number(plan.valor), vencimento, dataPagamento: "", status: vencimento < today ? "Atrasado" : "Pendente" });
-          created++;
-        }
-      }
-    }
+      if (exists) return acc;
+      const plan = plans.find(p => p.id === student.planoId);
+      if (!plan) return acc;
+      const vencDate = new Date(year, month - 1, parseInt(student.diaVencimento));
+      const vencimento = vencDate.toISOString().split("T")[0];
+      acc.push({ alunoId: student.id, planoId: student.planoId, valor: Number(plan.valor), vencimento, dataPagamento: "", status: vencimento < today ? "Atrasado" : "Pendente" });
+      return acc;
+    }, []);
+
+    await Promise.all(toCreate.map(addPayment));
     setGenerating(false);
-    alert(`${created} mensalidade(s) gerada(s). ${activeStudents.length - created} já existiam.`);
+    alert(`${toCreate.length} mensalidade(s) gerada(s). ${activeStudents.length - toCreate.length} já existiam.`);
   };
 
   const diasEmAtraso = (vencimento) => {
@@ -1302,20 +1301,6 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
             <StatCard label="Inadimplentes" value={delinquentStudents.length} icon="alert" color="#ef4444" />
           </div>
           <Card>
-            <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Alunos por Modalidade</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {byModality.map(m => (
-                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 120, fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{m.nome}</div>
-                  <div style={{ flex: 1, height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${Math.max(4, students.length ? (m.alunos / students.length) * 100 : 0)}%`, background: "#38bdf8", borderRadius: 4, transition: "width 0.5s" }} />
-                  </div>
-                  <div style={{ width: 30, textAlign: "right", fontSize: 13, fontWeight: 700, color: "#38bdf8" }}>{m.alunos}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
             <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Lista de Inadimplentes</h3>
             <Table
               cols={[
@@ -1401,7 +1386,21 @@ const navItems = [
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {
-  const [auth, setAuth] = useState(false);
+  // undefined = verificando sessão, null = deslogado, object = autenticado
+  const [session, setSession] = useState(undefined);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => setSession(session));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) return <LoadingScreen />;
+  if (!session) return <LoginScreen />;
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -1415,7 +1414,6 @@ export default function App() {
 
   const loading = sl || tl || ml || cl || pl || planl;
 
-  if (!auth) return <LoginScreen onLogin={() => setAuth(true)} />;
   if (loading) return <LoadingScreen />;
 
   const pageProps = {
@@ -1486,7 +1484,7 @@ export default function App() {
                 fontFamily: "inherit", fontSize: 13, fontWeight: active ? 700 : 500,
                 marginBottom: 2, textAlign: "left", transition: "all 0.15s", whiteSpace: "nowrap"
               }}
-                onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#ffffff08"; e.currentTarget.style.color = "#94a3b8"; }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = "#ffffff08"; e.currentTarget.style.color = "#94a3b8"; } }}
                 onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; } }}
               >
                 <div style={{ flexShrink: 0 }}><Icon d={icons[item.icon]} size={18} /></div>
@@ -1508,7 +1506,7 @@ export default function App() {
             </svg>
             {sidebarOpen && "Recolher"}
           </button>
-          <button onClick={() => setAuth(false)} style={{
+          <button onClick={() => supabase.auth.signOut()} style={{
             width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
             borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
             color: "#475569", fontFamily: "inherit", fontSize: 12, whiteSpace: "nowrap"

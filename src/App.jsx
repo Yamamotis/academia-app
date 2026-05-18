@@ -473,16 +473,7 @@ function LoginScreen() {
 
       <div style={{ width: "100%", maxWidth: 420, padding: 20, position: "relative" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{
-            width: 72, height: 72, borderRadius: 18, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
-            display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px"
-          }}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </div>
-          <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 32, fontWeight: 900, color: "#f1f5f9", margin: 0, letterSpacing: "0.02em" }}>PATRIOTA</h1>
-          <p style={{ color: "#64748b", fontSize: 14, margin: "4px 0 0" }}>FIGHT TEAM</p>
+          <img src="/logo.png" alt="Patriota Fight Team" style={{ width: 120, height: 120, objectFit: "contain", margin: "0 auto 8px", display: "block" }} />
         </div>
 
         <Card>
@@ -2124,15 +2115,8 @@ function AuthenticatedApp() {
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
         transition: "width 0.2s", flexShrink: 0, overflowX: "hidden",
       }}>
-        <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </div>
+        <div style={{ padding: "12px 8px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 8, justifyContent: sidebarOpen || isMobile ? "flex-start" : "center" }}>
+          <img src="/logo.png" alt="Patriota Fight Team" style={{ width: 44, height: 44, objectFit: "contain", flexShrink: 0 }} />
           {showLabel && (
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>PATRIOTA</div>

@@ -820,7 +820,6 @@ function SchedulePage({ classes, teachers, modalities }) {
   );
 }
 
-
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
 function AttendancePage({ classes, students, teachers, modalities }) {
   const [selectedClass, setSelectedClass] = useState("");
@@ -1221,21 +1220,10 @@ const navItems = [
   { key: "modalities", label: "Modalidades", icon: "modalities" },
   { key: "classes", label: "Aulas", icon: "classes" },
   { key: "schedule", label: "Agenda", icon: "schedule" },
-];
-
-/*
-const navItems = [
-  { key: "dashboard", label: "Dashboard", icon: "dashboard" },
-  { key: "students", label: "Alunos", icon: "students" },
-  { key: "teachers", label: "Professores", icon: "teachers" },
-  { key: "modalities", label: "Modalidades", icon: "modalities" },
-  { key: "classes", label: "Aulas", icon: "classes" },
-  { key: "schedule", label: "Agenda", icon: "schedule" },
   { key: "attendance", label: "Presença", icon: "attendance" },
   { key: "financial", label: "Financeiro", icon: "financial" },
   { key: "reports", label: "Relatórios", icon: "reports" },
 ];
-*/
 
 // ─── MAIN APP ────────────────────────────────────────────────────────────────
 export default function App() {

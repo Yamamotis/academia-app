@@ -572,7 +572,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
     const d = new Date(); d.setDate(new Date().getDate() + i);
     return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  const next7Dates = Array.from({ length: 7 }, (_, i) => {
+  const next10Dates = Array.from({ length: 10 }, (_, i) => {
     const d = new Date(); d.setDate(new Date().getDate() + i);
     return d.toISOString().split("T")[0];
   });
@@ -581,7 +581,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
     .map(s => ({ ...s, isToday: s.dataNascimento.slice(5) === todayMD, dayIdx: next7MD.indexOf(s.dataNascimento.slice(5)) }))
     .sort((a, b) => a.dayIdx - b.dayIdx);
   const upcomingDue = payments
-    .filter(p => p.status === "Pendente" && p.vencimento && next7Dates.includes(p.vencimento))
+    .filter(p => p.status === "Pendente" && p.vencimento && next10Dates.includes(p.vencimento))
     .sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""));
 
   return (
@@ -659,11 +659,11 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 
       {upcomingDue.length > 0 && (
         <Card style={{ marginTop: 16 }}>
-          <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.06em" }}>⏰ Vencimentos nos Próximos 7 Dias</h3>
+          <h3 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.06em" }}>⏰ Vencimentos nos Próximos 10 Dias</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {upcomingDue.map(p => {
               const student = students.find(s => s.id === p.alunoId);
-              const daysUntil = next7Dates.indexOf(p.vencimento);
+              const daysUntil = next10Dates.indexOf(p.vencimento);
               return (
                 <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 8, background: "#f59e0b08", border: "1px solid #f59e0b22" }}>
                   <div>
@@ -687,7 +687,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
-function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment, beltHistory = [], addBeltHistory, attendance = [] }) {
+function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment, updatePayment, beltHistory = [], addBeltHistory, attendance = [] }) {
   const toast = useToast();
   const { confirm, ConfirmUI } = useConfirm();
   const [search, setSearch] = useState("");
@@ -698,12 +698,28 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
   const [viewStudent, setViewStudent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [newBeltForm, setNewBeltForm] = useState(null);
+  const [editingDue, setEditingDue] = useState(null);
+
+  const todayStr = new Date().toISOString().split("T")[0];
 
   const filtered = useMemo(() => students.filter(s =>
     ((s.nome || "").toLowerCase().includes(search.toLowerCase()) || (s.cpf || "").includes(search)) &&
     (!filterModal || s.modalidade === filterModal) &&
     (!filterStatus || s.status === filterStatus)
   ), [students, search, filterModal, filterStatus]);
+
+  const studentsWithDue = useMemo(() => filtered.map(s => {
+    const pending = payments
+      .filter(p => p.alunoId === s.id && p.status === "Pendente")
+      .sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""));
+    const next = pending[0] || null;
+    if (!next) return { ...s, _dueDate: null, _daysUntil: null, _payId: null };
+    const daysUntil = Math.round((new Date(next.vencimento) - new Date(todayStr)) / 86400000);
+    return { ...s, _dueDate: next.vencimento, _daysUntil: daysUntil, _payId: next.id };
+  }), [filtered, payments, todayStr]);
+
+  const nearDueCount = studentsWithDue.filter(s => s._daysUntil !== null && s._daysUntil >= 0 && s._daysUntil <= 10).length;
+  const overDueCount = studentsWithDue.filter(s => s._daysUntil !== null && s._daysUntil < 0).length;
 
   const exportStudents = () => {
     exportCSV("alunos.csv",
@@ -789,6 +805,23 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
         </div>
       </Card>
 
+      {(nearDueCount > 0 || overDueCount > 0) && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          {overDueCount > 0 && (
+            <div style={{ flex: 1, minWidth: 220, padding: "10px 16px", background: "#ef444411", border: "1px solid #ef444433", borderRadius: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon d={icons.alert} size={18} color="#ef4444" />
+              <span style={{ fontSize: 13, color: "#ef4444", fontWeight: 600 }}>{overDueCount} aluno(s) com pagamento em atraso</span>
+            </div>
+          )}
+          {nearDueCount > 0 && (
+            <div style={{ flex: 1, minWidth: 220, padding: "10px 16px", background: "#f59e0b11", border: "1px solid #f59e0b33", borderRadius: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon d={icons.alert} size={18} color="#f59e0b" />
+              <span style={{ fontSize: 13, color: "#f59e0b", fontWeight: 600 }}>{nearDueCount} aluno(s) com vencimento nos próximos 10 dias</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <Card>
         <Table
           cols={[
@@ -797,8 +830,24 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
             { key: "telefone", label: "Telefone" },
             { key: "dataMatricula", label: "Matrícula", render: v => formatDate(v) },
             { key: "status", label: "Status", render: v => <Badge color={STATUS_COLORS[v] || "#64748b"}>{v}</Badge> },
+            { key: "_dueDate", label: "Próx. Vencimento", sortable: false, render: (v, row) => {
+              if (!v) return <span style={{ color: "#475569" }}>—</span>;
+              const days = row._daysUntil;
+              const color = days < 0 ? "#ef4444" : days <= 10 ? "#f59e0b" : "#22c55e";
+              const label = days < 0 ? `${Math.abs(days)}d atraso` : days === 0 ? "Hoje" : `${days}d`;
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color, fontWeight: 600 }}>{formatDate(v)}</span>
+                  <span style={{ fontSize: 11, color, background: color + "22", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>{label}</span>
+                  <button onClick={e => { e.stopPropagation(); setEditingDue({ payId: row._payId, date: v, studentName: row.nome }); }}
+                    style={{ background: "none", border: "1px solid #334155", borderRadius: 4, padding: "2px 5px", cursor: "pointer", color: "#94a3b8", lineHeight: 1, display: "flex", alignItems: "center" }}>
+                    <Icon d={icons.edit} size={11} />
+                  </button>
+                </div>
+              );
+            }},
           ]}
-          rows={filtered}
+          rows={studentsWithDue}
           onEdit={openEdit}
           onDelete={del}
           pageSize={50}
@@ -950,6 +999,24 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
         </Modal>
       )}
       {ConfirmUI}
+      {editingDue && (
+        <Modal title="Editar Data de Vencimento" onClose={() => setEditingDue(null)} width={400}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Aluno</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0" }}>{editingDue.studentName}</div>
+          </div>
+          <Input label="Nova Data de Vencimento" type="date" value={editingDue.date || ""} onChange={v => setEditingDue(p => ({ ...p, date: v }))} />
+          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+            <Btn onClick={() => setEditingDue(null)} variant="ghost">Cancelar</Btn>
+            <Btn onClick={async () => {
+              if (!editingDue.date) return;
+              await updatePayment(editingDue.payId, { vencimento: editingDue.date });
+              toast("Vencimento atualizado!", "success");
+              setEditingDue(null);
+            }}><Icon d={icons.check} size={16} />Salvar</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -818,7 +818,11 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
     setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", diaVencimento: "10", status: "Ativo", contatoEmergenciaNome: "", contatoEmergenciaTel: "", observacoesMedicas: "", peso: "", altura: "" });
     setModal("form");
   };
-  const openEdit = (s) => { setForm({ ...s }); setModal("form"); };
+  const openEdit = (s) => {
+    const { _dueDate, _daysUntil, _payId, ...rest } = s;
+    setForm({ ...rest });
+    setModal("form");
+  };
 
   const save = async () => {
     if (!form.nome) return;

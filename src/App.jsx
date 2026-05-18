@@ -35,6 +35,34 @@ const exportCSV = (filename, headers, rows) => {
   URL.revokeObjectURL(url);
 };
 
+const printReceipt = (payment, student) => {
+  const win = window.open("", "_blank", "width=520,height=720");
+  if (!win) return;
+  const date = new Date().toLocaleDateString("pt-BR");
+  const num = String(Date.now()).slice(-6);
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo #${num}</title><style>
+    *{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:40px;color:#111;max-width:480px;margin:0 auto}
+    h1{font-size:22px;text-align:center;margin-bottom:4px}h2{font-size:13px;text-align:center;color:#555;margin-bottom:20px;font-weight:normal;letter-spacing:.05em;text-transform:uppercase}
+    .num{background:#f5f5f5;padding:6px 16px;border-radius:4px;font-size:13px;font-family:monospace;text-align:center;margin-bottom:20px;border:1px solid #ddd}
+    .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee;font-size:14px}.label{color:#666}
+    .total{display:flex;justify-content:space-between;font-size:20px;font-weight:bold;padding:16px 0;border-top:3px solid #111;margin-top:8px}
+    .footer{margin-top:28px;text-align:center;font-size:12px;color:#999;border-top:1px dashed #ccc;padding-top:14px;line-height:1.6}
+    @media print{.no-print{display:none}body{padding:20px}}
+  </style></head><body>
+    <h1>PATRIOTA FIGHT TEAM</h1>
+    <h2>Academia de Artes Marciais</h2>
+    <div class="num">RECIBO Nº ${num}</div>
+    <div class="row"><span class="label">Aluno</span><strong>${student?.nome || "—"}</strong></div>
+    <div class="row"><span class="label">Modalidade</span><span>${student?.modalidade || "—"}</span></div>
+    <div class="row"><span class="label">Referência</span><span>${payment.vencimento ? payment.vencimento.split("-").reverse().join("/") : "—"}</span></div>
+    <div class="row"><span class="label">Data Pagamento</span><span>${date}</span></div>
+    <div class="total"><span>VALOR PAGO</span><span>R$ ${Number(payment.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></div>
+    <div class="footer">Emitido em ${date}<br>Patriota Fight Team · Comprovante de Pagamento</div>
+    <br><button class="no-print" onclick="window.print()" style="width:100%;padding:14px;background:#0f172a;color:#fff;border:none;border-radius:6px;font-size:15px;cursor:pointer;margin-top:12px">🖨️ Imprimir / Salvar PDF</button>
+  </body></html>`);
+  win.document.close();
+};
+
 // ─── TOAST ───────────────────────────────────────────────────────────────────
 const ToastContext = createContext(() => {});
 const useToast = () => useContext(ToastContext);
@@ -83,6 +111,7 @@ function useConfirm() {
 function useTable(tableName) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     supabase
@@ -91,7 +120,7 @@ function useTable(tableName) {
       .order("created_at", { ascending: true })
       .limit(500)
       .then(({ data, error }) => {
-        if (error) console.error(`[${tableName}] fetch error:`, error.message);
+        if (error) { console.error(`[${tableName}] fetch error:`, error.message); setError(error.message); }
         else setRows((data || []).map(fromDb));
         setLoading(false);
       });
@@ -146,7 +175,7 @@ function useTable(tableName) {
     return true;
   };
 
-  return { rows, loading, add, update, remove };
+  return { rows, loading, error, add, update, remove };
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -184,6 +213,7 @@ const icons = {
   belt: "M2 12h20 M12 2v20",
   whatsapp: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z",
   key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
+  print: "M6 9V2h12v7 M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 14h12v8H6z",
 };
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
@@ -280,25 +310,56 @@ const Modal = ({ title, onClose, children, width = 560 }) => (
   </div>
 );
 
-function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0 }) {
+function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0, emptyAction }) {
   const [page, setPage] = useState(0);
-  const totalPages = pageSize > 0 ? Math.ceil(rows.length / pageSize) : 1;
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const av = String(a[sortKey] ?? "");
+      const bv = String(b[sortKey] ?? "");
+      return sortDir === "asc"
+        ? av.localeCompare(bv, "pt-BR", { numeric: true })
+        : bv.localeCompare(av, "pt-BR", { numeric: true });
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const totalPages = pageSize > 0 ? Math.ceil(sorted.length / pageSize) : 1;
   const safePage = Math.min(page, Math.max(0, totalPages - 1));
-  const displayed = pageSize > 0 ? rows.slice(safePage * pageSize, (safePage + 1) * pageSize) : rows;
+  const displayed = pageSize > 0 ? sorted.slice(safePage * pageSize, (safePage + 1) * pageSize) : sorted;
+
+  const toggleSort = (col) => {
+    if (col.sortable === false) return;
+    if (sortKey === col.key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(col.key); setSortDir("asc"); setPage(0); }
+  };
+
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             {cols.map(c => (
-              <th key={c.key} style={{ textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #334155" }}>{c.label}</th>
+              <th key={c.key} onClick={() => toggleSort(c)} style={{
+                textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b",
+                textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #334155",
+                cursor: c.sortable === false ? "default" : "pointer", userSelect: "none", whiteSpace: "nowrap",
+              }}>
+                {c.label}
+                {sortKey === c.key && <span style={{ marginLeft: 4, color: "#38bdf8" }}>{sortDir === "asc" ? "↑" : "↓"}</span>}
+              </th>
             ))}
             <th style={{ textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #334155" }}>Ações</th>
           </tr>
         </thead>
         <tbody>
           {displayed.length === 0 ? (
-            <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: 40, color: "#475569" }}>Nenhum registro encontrado</td></tr>
+            <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: "40px 20px", color: "#475569" }}>
+              <div style={{ fontSize: 14 }}>Nenhum registro encontrado</div>
+              {emptyAction && <div style={{ marginTop: 14 }}>{emptyAction}</div>}
+            </td></tr>
           ) : displayed.map((row, i) => (
             <tr key={row.id || i} style={{ borderBottom: "1px solid #1e293b", transition: "background 0.1s" }}
               onMouseEnter={e => e.currentTarget.style.background = "#ffffff08"}
@@ -321,7 +382,7 @@ function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0 }) {
       </table>
       {pageSize > 0 && totalPages > 1 && (
         <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #1e293b" }}>
-          <span style={{ fontSize: 12, color: "#64748b" }}>{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, rows.length)} de {rows.length}</span>
+          <span style={{ fontSize: 12, color: "#64748b" }}>{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)} de {sorted.length}</span>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <Btn onClick={() => setPage(p => Math.max(0, p - 1))} variant="ghost" size="sm" disabled={safePage === 0}>← Anterior</Btn>
             <span style={{ fontSize: 13, color: "#64748b", padding: "0 8px" }}>{safePage + 1}/{totalPages}</span>
@@ -351,6 +412,23 @@ function LoadingScreen() {
       </div>
       <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700, letterSpacing: "0.1em" }}>CARREGANDO...</div>
       <div style={{ color: "#475569", fontSize: 12 }}>Conectando ao banco de dados</div>
+    </div>
+  );
+}
+
+// ─── ERROR SCREEN ─────────────────────────────────────────────────────────────
+function ErrorScreen({ message, onRetry }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Barlow', sans-serif", flexDirection: "column", gap: 16, padding: 24 }}>
+      <div style={{ width: 56, height: 56, borderRadius: 14, background: "#ef444422", border: "1px solid #ef444433", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon d={icons.alert} size={28} color="#ef4444" />
+      </div>
+      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#f1f5f9" }}>Erro de Conexão</h2>
+      <p style={{ margin: 0, color: "#64748b", fontSize: 14, textAlign: "center", maxWidth: 340 }}>
+        Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.
+      </p>
+      {message && <code style={{ fontSize: 11, color: "#475569", background: "#1e293b", padding: "6px 12px", borderRadius: 6, maxWidth: 400, wordBreak: "break-all" }}>{message}</code>}
+      <Btn onClick={onRetry} style={{ marginTop: 8 }}>Tentar Novamente</Btn>
     </div>
   );
 }
@@ -609,7 +687,7 @@ function Dashboard({ students, teachers, classes, payments, modalities }) {
 }
 
 // ─── STUDENTS ────────────────────────────────────────────────────────────────
-function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment, beltHistory = [], addBeltHistory }) {
+function StudentsPage({ students, addStudent, updateStudent, removeStudent, teachers, modalities, plans, payments, addPayment, beltHistory = [], addBeltHistory, attendance = [] }) {
   const toast = useToast();
   const { confirm, ConfirmUI } = useConfirm();
   const [search, setSearch] = useState("");
@@ -635,7 +713,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
   };
 
   const openNew = () => {
-    setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", diaVencimento: "10", status: "Ativo" });
+    setForm({ nome: "", cpf: "", dataNascimento: "", telefone: "", email: "", endereco: "", dataMatricula: new Date().toISOString().split("T")[0], modalidade: "", professorId: "", planoId: "", diaVencimento: "10", status: "Ativo", contatoEmergenciaNome: "", contatoEmergenciaTel: "", observacoesMedicas: "", peso: "", altura: "" });
     setModal("form");
   };
   const openEdit = (s) => { setForm({ ...s }); setModal("form"); };
@@ -724,6 +802,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
           onEdit={openEdit}
           onDelete={del}
           pageSize={50}
+          emptyAction={<Btn onClick={openNew}><Icon d={icons.plus} size={16} />Cadastrar Primeiro Aluno</Btn>}
           extraActions={(row) => (
             <Btn onClick={() => setViewStudent(row)} variant="ghost" size="sm">
               <Icon d={icons.users} size={14} />Ver
@@ -748,6 +827,15 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
             <Input label="Dia de Vencimento" value={form.diaVencimento || ""} onChange={v => setForm(p => ({ ...p, diaVencimento: v }))}
               options={Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `Dia ${i + 1}` }))} />
             <Input label="Status" value={form.status || "Ativo"} onChange={v => setForm(p => ({ ...p, status: v }))} options={statusOpts} />
+            <Input label="Peso (kg)" type="number" value={String(form.peso || "")} onChange={v => setForm(p => ({ ...p, peso: v }))} placeholder="Ex: 72" />
+            <Input label="Altura (cm)" type="number" value={String(form.altura || "")} onChange={v => setForm(p => ({ ...p, altura: v }))} placeholder="Ex: 175" />
+            <Input label="Contato de Emergência" value={form.contatoEmergenciaNome || ""} onChange={v => setForm(p => ({ ...p, contatoEmergenciaNome: v }))} placeholder="Nome do contato" />
+            <Input label="Telefone Emergência" value={form.contatoEmergenciaTel || ""} onChange={v => setForm(p => ({ ...p, contatoEmergenciaTel: maskPhone(v) }))} placeholder="(00) 00000-0000" />
+            <div style={{ gridColumn: "1/-1" }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Observações Médicas</label>
+              <textarea value={form.observacoesMedicas || ""} onChange={e => setForm(p => ({ ...p, observacoesMedicas: e.target.value }))} rows={2} placeholder="Alergias, lesões, restrições..."
+                style={{ width: "100%", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", resize: "vertical" }} />
+            </div>
           </div>
           {!form.id && form.planoId && form.diaVencimento && (
             <div style={{ marginTop: 16, padding: "10px 14px", background: "#38bdf811", border: "1px solid #38bdf833", borderRadius: 8, fontSize: 13, color: "#38bdf8" }}>
@@ -763,13 +851,42 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
 
       {viewStudent && (
         <Modal title={viewStudent.nome} onClose={() => setViewStudent(null)} width={560}>
+          {(() => {
+            const att = attendance.filter(a => a.studentId === viewStudent.id);
+            const present = att.filter(a => a.present).length;
+            const total = att.length;
+            if (total === 0) return null;
+            const rate = Math.round((present / total) * 100);
+            return (
+              <div style={{ display: "flex", gap: 20, padding: "12px 16px", background: "#0f172a", borderRadius: 8, border: "1px solid #334155", marginBottom: 16 }}>
+                <div><span style={{ fontSize: 22, fontWeight: 800, color: "#22c55e" }}>{present}</span><span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>presenças</span></div>
+                <div><span style={{ fontSize: 22, fontWeight: 800, color: "#ef4444" }}>{total - present}</span><span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>faltas</span></div>
+                <div><span style={{ fontSize: 22, fontWeight: 800, color: "#38bdf8" }}>{rate}%</span><span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>presença</span></div>
+              </div>
+            );
+          })()}
           <div className="grid-2col" style={{ gap: 12, marginBottom: 20 }}>
-            {[["CPF", viewStudent.cpf], ["Telefone", viewStudent.telefone], ["Email", viewStudent.email], ["Modalidade", viewStudent.modalidade], ["Matrícula", viewStudent.dataMatricula], ["Vencimento", viewStudent.diaVencimento ? `Dia ${viewStudent.diaVencimento}` : "—"], ["Status", viewStudent.status]].map(([k, v]) => (
+            {[
+              ["CPF", viewStudent.cpf], ["Telefone", viewStudent.telefone], ["Email", viewStudent.email],
+              ["Modalidade", viewStudent.modalidade], ["Matrícula", formatDate(viewStudent.dataMatricula)],
+              ["Vencimento", viewStudent.diaVencimento ? `Dia ${viewStudent.diaVencimento}` : "—"],
+              ["Status", viewStudent.status],
+              ...(viewStudent.peso ? [["Peso", `${viewStudent.peso} kg`]] : []),
+              ...(viewStudent.altura ? [["Altura", `${viewStudent.altura} cm`]] : []),
+              ...(viewStudent.contatoEmergenciaNome ? [["Emerg. Nome", viewStudent.contatoEmergenciaNome]] : []),
+              ...(viewStudent.contatoEmergenciaTel ? [["Emerg. Tel", viewStudent.contatoEmergenciaTel]] : []),
+            ].map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{k}</div>
-                <div style={{ fontSize: 14, color: "#e2e8f0" }}>{k === "Status" ? <Badge color={STATUS_COLORS[v] || "#64748b"}>{v}</Badge> : v}</div>
+                <div style={{ fontSize: 14, color: "#e2e8f0" }}>{k === "Status" ? <Badge color={STATUS_COLORS[v] || "#64748b"}>{v}</Badge> : (v || "—")}</div>
               </div>
             ))}
+            {viewStudent.observacoesMedicas && (
+              <div style={{ gridColumn: "1/-1" }}>
+                <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Obs. Médicas</div>
+                <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{viewStudent.observacoesMedicas}</div>
+              </div>
+            )}
           </div>
           <h4 style={{ margin: "0 0 12px", fontSize: 13, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Histórico de Pagamentos</h4>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1125,8 +1242,7 @@ function SchedulePage({ classes, teachers, modalities }) {
 }
 
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
-function AttendancePage({ classes, students, teachers, modalities }) {
-  const { add: addAttendance } = useTable("attendance");
+function AttendancePage({ classes, students, teachers, modalities, addAttendance }) {
   const [selectedClass, setSelectedClass] = useState("");
   const [attendance, setAttendance] = useState({});
   const [saved, setSaved] = useState(false);
@@ -1238,6 +1354,7 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
   const [planForm, setPlanForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [paymentSearch, setPaymentSearch] = useState("");
   const [monthFilter, setMonthFilter] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1266,11 +1383,15 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
   const pendingTotal = payments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const overdueTotal = payments.filter(p => p.status === "Atrasado").reduce((s, p) => s + (Number(p.valor) || 0), 0);
 
-  // Pagamentos filtrados por mês
+  // Pagamentos filtrados por mês + busca
   const filteredPayments = useMemo(() => {
-    if (!monthFilter) return payments;
-    return payments.filter(p => (p.vencimento || "").startsWith(monthFilter));
-  }, [payments, monthFilter]);
+    let result = monthFilter ? payments.filter(p => (p.vencimento || "").startsWith(monthFilter)) : payments;
+    if (paymentSearch) {
+      const q = paymentSearch.toLowerCase();
+      result = result.filter(p => (students.find(s => s.id === p.alunoId)?.nome || "").toLowerCase().includes(q));
+    }
+    return result;
+  }, [payments, monthFilter, paymentSearch, students]);
 
   const monthPaid = filteredPayments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const monthPending = filteredPayments.filter(p => p.status === "Pendente").reduce((s, p) => s + (Number(p.valor) || 0), 0);
@@ -1279,13 +1400,28 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
   const registerPayment = async (payment) => {
     await updatePayment(payment.id, { ...payment, status: "Pago", dataPagamento: today });
     toast("Pagamento baixado!", "success");
-    // Reativar aluno se não tiver mais pagamentos atrasados
     const student = students.find(s => s.id === payment.alunoId);
+    // Reativar aluno se não tiver mais pagamentos atrasados
     if (student && student.status === "Inadimplente") {
       const stillOverdue = payments.some(p => p.id !== payment.id && p.alunoId === payment.alunoId && p.status === "Atrasado");
       if (!stillOverdue) {
         await updateStudent(student.id, { ...student, status: "Ativo" });
         toast(`${student.nome?.split(" ")[0]} reativado como Ativo.`, "success");
+      }
+    }
+    // Gerar próxima mensalidade automaticamente
+    if (student?.planoId && student?.diaVencimento && payment.vencimento) {
+      const ref = new Date(payment.vencimento + "T12:00:00");
+      const nextVenc = new Date(ref.getFullYear(), ref.getMonth() + 1, parseInt(student.diaVencimento));
+      const nextStr = nextVenc.toISOString().split("T")[0];
+      const nextMonth = nextStr.slice(0, 7);
+      const alreadyExists = payments.some(p => p.alunoId === payment.alunoId && (p.vencimento || "").startsWith(nextMonth));
+      if (!alreadyExists) {
+        const plan = plans.find(p => p.id === student.planoId);
+        if (plan) {
+          await addPayment({ alunoId: student.id, planoId: student.planoId, valor: Number(plan.valor), vencimento: nextStr, dataPagamento: "", status: nextStr < today ? "Atrasado" : "Pendente" });
+          toast(`Mensalidade de ${nextVenc.toLocaleDateString("pt-BR", { month: "long" })} gerada.`, "success");
+        }
       }
     }
   };
@@ -1376,6 +1512,11 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ position: "relative" }}>
+                <div style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}><Icon d={icons.search} size={14} color="#64748b" /></div>
+                <input value={paymentSearch} onChange={e => setPaymentSearch(e.target.value)} placeholder="Buscar aluno..."
+                  style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "8px 12px 8px 32px", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", width: 180 }} />
+              </div>
               <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)} style={{
                 background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "8px 14px",
                 color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none"
@@ -1423,10 +1564,11 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
             pageSize={50}
             onEdit={r => { setForm({ ...r }); setModal("payment"); }}
             onDelete={async id => { if (await confirm("Deseja excluir este pagamento?")) { const ok = await removePayment(id); if (ok) toast("Pagamento excluído.", "success"); } }}
-            extraActions={row => row.status !== "Pago" && (
-              <Btn onClick={() => registerPayment(row)} variant="success" size="sm">
-                <Icon d={icons.check} size={14} />Pago
-              </Btn>
+            extraActions={row => (
+              <div style={{ display: "flex", gap: 6 }}>
+                {row.status !== "Pago" && <Btn onClick={() => registerPayment(row)} variant="success" size="sm"><Icon d={icons.check} size={14} />Pago</Btn>}
+                {row.status === "Pago" && <Btn onClick={() => printReceipt(row, students.find(s => s.id === row.alunoId))} variant="ghost" size="sm"><Icon d={icons.print} size={14} />Recibo</Btn>}
+              </div>
             )}
           />
         </Card>
@@ -1601,7 +1743,7 @@ function RevenueChart({ payments }) {
 }
 
 // ─── REPORTS ──────────────────────────────────────────────────────────────────
-function ReportsPage({ students, teachers, classes, payments, modalities }) {
+function ReportsPage({ students, teachers, classes, payments, modalities, attendance = [] }) {
   const [tab, setTab] = useState("students");
 
   const activeStudents = students.filter(s => s.status === "Ativo");
@@ -1624,12 +1766,24 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
 
   const monthRevenue = payments.filter(p => p.status === "Pago").reduce((s, p) => s + (Number(p.valor) || 0), 0);
 
+  // Presença por aula
+  const attendanceByClass = classes.map(c => {
+    const records = attendance.filter(a => a.classId === c.id);
+    const present = records.filter(a => a.present).length;
+    const mod = modalities.find(m => m.id === c.modalidadeId);
+    const prof = teachers.find(t => t.id === c.professorId);
+    return { id: c.id, label: `${c.diaSemana} ${c.horarioInicio}`, modality: mod?.nome || "—", teacher: prof?.nome?.split(" ")[0] || "—", total: records.length, present, rate: records.length > 0 ? Math.round((present / records.length) * 100) : 0 };
+  }).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+
+  const totalPresent = attendance.filter(a => a.present).length;
+  const totalAttendance = attendance.length;
+
   return (
     <div>
       <PageHeader title="RELATÓRIOS" subtitle="Dados e estatísticas da academia" />
 
       <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
-        {[["students", "Alunos"], ["classes", "Aulas"], ["financial", "Financeiro"]].map(([key, label]) => (
+        {[["students", "Alunos"], ["classes", "Aulas"], ["financial", "Financeiro"], ["attendance", "Presença"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "all 0.15s",
@@ -1731,6 +1885,45 @@ function ReportsPage({ students, teachers, classes, payments, modalities }) {
           </Card>
         </div>
       )}
+
+      {tab === "attendance" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {totalAttendance === 0 ? (
+            <Card><div style={{ textAlign: "center", padding: "40px 20px", color: "#475569" }}>
+              <Icon d={icons.attendance} size={40} color="#334155" />
+              <p style={{ marginTop: 12, fontSize: 14 }}>Nenhum registro de presença encontrado.<br/>Use a página Presença para registrar aulas.</p>
+            </div></Card>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+                <StatCard label="Total de Registros" value={totalAttendance} icon="attendance" color="#38bdf8" />
+                <StatCard label="Presenças" value={totalPresent} icon="check" color="#22c55e" sub={`${Math.round((totalPresent / totalAttendance) * 100)}% de presença`} />
+                <StatCard label="Faltas" value={totalAttendance - totalPresent} icon="alert" color="#ef4444" />
+              </div>
+              <Card>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Presença por Aula</h3>
+                  <Btn onClick={() => exportCSV("presenca.csv", ["Aula", "Modalidade", "Professor", "Total", "Presenças", "Taxa"], attendanceByClass.map(c => [c.label, c.modality, c.teacher, c.total, c.present, `${c.rate}%`]))} variant="ghost" size="sm">
+                    <Icon d={icons.reports} size={14} />CSV
+                  </Btn>
+                </div>
+                <Table
+                  cols={[
+                    { key: "label", label: "Aula" },
+                    { key: "modality", label: "Modalidade" },
+                    { key: "teacher", label: "Professor" },
+                    { key: "total", label: "Registros" },
+                    { key: "present", label: "Presenças" },
+                    { key: "rate", label: "Taxa", render: v => <Badge color={v >= 80 ? "#22c55e" : v >= 60 ? "#f59e0b" : "#ef4444"}>{v}%</Badge> },
+                  ]}
+                  rows={attendanceByClass}
+                  onEdit={null} onDelete={null}
+                />
+              </Card>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1790,17 +1983,19 @@ function AuthenticatedApp() {
   }, []);
 
   // ── Supabase tables ──
-  const { rows: students, loading: sl, add: addStudent, update: updateStudent, remove: removeStudent } = useTable("students");
+  const { rows: students, loading: sl, error: se, add: addStudent, update: updateStudent, remove: removeStudent } = useTable("students");
   const { rows: teachers, loading: tl, add: addTeacher, update: updateTeacher, remove: removeTeacher } = useTable("teachers");
   const { rows: modalities, loading: ml, add: addModality, update: updateModality, remove: removeModality } = useTable("modalities");
   const { rows: classes, loading: cl, add: addClass, update: updateClass, remove: removeClass } = useTable("classes");
   const { rows: payments, loading: pl, add: addPayment, update: updatePayment, remove: removePayment } = useTable("payments");
   const { rows: plans, loading: planl, add: addPlan, update: updatePlan, remove: removePlan } = useTable("plans");
   const { rows: beltHistory, add: addBeltHistory } = useTable("belt_history");
+  const { rows: attendance, add: addAttendance } = useTable("attendance");
 
   const loading = sl || tl || ml || cl || pl || planl;
 
   if (loading) return <LoadingScreen />;
+  if (se) return <ErrorScreen message={se} onRetry={() => window.location.reload()} />;
 
   const navigate = (key) => { setPage(key); if (isMobile) setMobileNavOpen(false); };
   const showLabel = sidebarOpen || isMobile;
@@ -1813,6 +2008,7 @@ function AuthenticatedApp() {
     payments, addPayment, updatePayment, removePayment,
     plans, addPlan, updatePlan, removePlan,
     beltHistory, addBeltHistory,
+    attendance, addAttendance,
   };
 
   const pages = {
@@ -1822,9 +2018,9 @@ function AuthenticatedApp() {
     modalities: <ModalitiesPage {...pageProps} />,
     classes: <ClassesPage {...pageProps} />,
     schedule: <SchedulePage classes={classes} teachers={teachers} modalities={modalities} />,
-    attendance: <AttendancePage classes={classes} students={students} teachers={teachers} modalities={modalities} />,
+    attendance: <AttendancePage classes={classes} students={students} teachers={teachers} modalities={modalities} addAttendance={addAttendance} />,
     financial: <FinancialPage {...pageProps} />,
-    reports: <ReportsPage students={students} teachers={teachers} classes={classes} payments={payments} modalities={modalities} />,
+    reports: <ReportsPage students={students} teachers={teachers} classes={classes} payments={payments} modalities={modalities} attendance={attendance} />,
   };
 
   return (

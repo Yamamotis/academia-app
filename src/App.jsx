@@ -1783,7 +1783,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities, attend
       <PageHeader title="RELATÓRIOS" subtitle="Dados e estatísticas da academia" />
 
       <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
-        {[["students", "Alunos"], ["classes", "Aulas"], ["financial", "Financeiro"], ["attendance", "Presença"]].map(([key, label]) => (
+        {[["students", "Alunos"], ["classes", "Aulas"], ["financial", "Financeiro"]].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "all 0.15s",
@@ -1886,44 +1886,7 @@ function ReportsPage({ students, teachers, classes, payments, modalities, attend
         </div>
       )}
 
-      {tab === "attendance" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {totalAttendance === 0 ? (
-            <Card><div style={{ textAlign: "center", padding: "40px 20px", color: "#475569" }}>
-              <Icon d={icons.attendance} size={40} color="#334155" />
-              <p style={{ marginTop: 12, fontSize: 14 }}>Nenhum registro de presença encontrado.<br/>Use a página Presença para registrar aulas.</p>
-            </div></Card>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
-                <StatCard label="Total de Registros" value={totalAttendance} icon="attendance" color="#38bdf8" />
-                <StatCard label="Presenças" value={totalPresent} icon="check" color="#22c55e" sub={`${Math.round((totalPresent / totalAttendance) * 100)}% de presença`} />
-                <StatCard label="Faltas" value={totalAttendance - totalPresent} icon="alert" color="#ef4444" />
-              </div>
-              <Card>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Presença por Aula</h3>
-                  <Btn onClick={() => exportCSV("presenca.csv", ["Aula", "Modalidade", "Professor", "Total", "Presenças", "Taxa"], attendanceByClass.map(c => [c.label, c.modality, c.teacher, c.total, c.present, `${c.rate}%`]))} variant="ghost" size="sm">
-                    <Icon d={icons.reports} size={14} />CSV
-                  </Btn>
-                </div>
-                <Table
-                  cols={[
-                    { key: "label", label: "Aula" },
-                    { key: "modality", label: "Modalidade" },
-                    { key: "teacher", label: "Professor" },
-                    { key: "total", label: "Registros" },
-                    { key: "present", label: "Presenças" },
-                    { key: "rate", label: "Taxa", render: v => <Badge color={v >= 80 ? "#22c55e" : v >= 60 ? "#f59e0b" : "#ef4444"}>{v}%</Badge> },
-                  ]}
-                  rows={attendanceByClass}
-                  onEdit={null} onDelete={null}
-                />
-              </Card>
-            </>
-          )}
-        </div>
-      )}
+
     </div>
   );
 }

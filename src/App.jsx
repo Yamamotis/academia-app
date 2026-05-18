@@ -167,19 +167,19 @@ const Input = ({ label, value, onChange, type = "text", options, placeholder, re
 const Modal = ({ title, onClose, children, width = 560 }) => (
   <div style={{
     position: "fixed", inset: 0, background: "#00000099", zIndex: 1000,
-    display: "flex", alignItems: "center", justifyContent: "center", padding: 20
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 16
   }} onClick={onClose}>
     <div onClick={e => e.stopPropagation()} style={{
       background: "#1e293b", border: "1px solid #334155", borderRadius: 16,
-      width: "100%", maxWidth: width, maxHeight: "90vh", overflow: "auto"
+      width: "100%", maxWidth: width, maxHeight: "92vh", overflow: "auto"
     }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="modal-header">
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#f1f5f9" }}>{title}</h3>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", flexShrink: 0 }}>
           <Icon d={icons.close} size={20} />
         </button>
       </div>
-      <div style={{ padding: "24px" }}>{children}</div>
+      <div className="modal-body">{children}</div>
     </div>
   </div>
 );
@@ -504,7 +504,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
 
       {modal === "form" && (
         <Modal title={form.id ? "Editar Aluno" : "Novo Aluno"} onClose={() => setModal(null)} width={640}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="grid-2col">
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
             <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} placeholder="000.000.000-00" />
             <Input label="Data de Nascimento" type="date" value={form.dataNascimento || ""} onChange={v => setForm(p => ({ ...p, dataNascimento: v }))} />
@@ -533,7 +533,7 @@ function StudentsPage({ students, addStudent, updateStudent, removeStudent, teac
 
       {viewStudent && (
         <Modal title={viewStudent.nome} onClose={() => setViewStudent(null)} width={560}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+          <div className="grid-2col" style={{ gap: 12, marginBottom: 20 }}>
             {[["CPF", viewStudent.cpf], ["Telefone", viewStudent.telefone], ["Email", viewStudent.email], ["Modalidade", viewStudent.modalidade], ["Matrícula", viewStudent.dataMatricula], ["Vencimento", viewStudent.diaVencimento ? `Dia ${viewStudent.diaVencimento}` : "—"], ["Status", viewStudent.status]].map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{k}</div>
@@ -635,7 +635,7 @@ function TeachersPage({ teachers, addTeacher, updateTeacher, removeTeacher, moda
 
       {modal === "form" && (
         <Modal title={form.id ? "Editar Professor" : "Novo Professor"} onClose={() => setModal(null)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="grid-2col">
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome Completo" value={form.nome || ""} onChange={v => setForm(p => ({ ...p, nome: v }))} required /></div>
             <Input label="CPF" value={form.cpf || ""} onChange={v => setForm(p => ({ ...p, cpf: v }))} />
             <Input label="Telefone" value={form.telefone || ""} onChange={v => setForm(p => ({ ...p, telefone: v }))} />
@@ -776,7 +776,7 @@ function ClassesPage({ classes, addClass, updateClass, removeClass, teachers, mo
 
       {modal === "form" && (
         <Modal title={form.id ? "Editar Aula" : "Nova Aula"} onClose={() => setModal(null)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="grid-2col">
             <Input label="Modalidade" value={form.modalidadeId || ""} onChange={v => setForm(p => ({ ...p, modalidadeId: v }))} options={modalities.map(m => ({ value: m.id, label: m.nome }))} />
             <Input label="Professor" value={form.professorId || ""} onChange={v => setForm(p => ({ ...p, professorId: v }))} options={teachers.map(t => ({ value: t.id, label: t.nome }))} />
             <Input label="Dia da Semana" value={form.diaSemana || "Segunda"} onChange={v => setForm(p => ({ ...p, diaSemana: v }))} options={DAYS.map(d => ({ value: d, label: d }))} />
@@ -1214,7 +1214,7 @@ function FinancialPage({ payments, addPayment, updatePayment, removePayment, stu
 
       {modal === "payment" && (
         <Modal title={form.id ? "Editar Pagamento" : "Novo Pagamento"} onClose={() => setModal(null)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="grid-2col">
             <div style={{ gridColumn: "1/-1" }}>
               <Input label="Aluno" value={form.alunoId || ""} onChange={v => {
                 const student = students.find(s => s.id === v);
@@ -1400,9 +1400,22 @@ export default function App() {
   return <AuthenticatedApp />;
 }
 
+// ─── MOBILE HOOK ─────────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < breakpoint);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 function AuthenticatedApp() {
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Supabase tables ──
   const { rows: students, loading: sl, add: addStudent, update: updateStudent, remove: removeStudent } = useTable("students");
@@ -1415,6 +1428,9 @@ function AuthenticatedApp() {
   const loading = sl || tl || ml || cl || pl || planl;
 
   if (loading) return <LoadingScreen />;
+
+  const navigate = (key) => { setPage(key); if (isMobile) setMobileNavOpen(false); };
+  const showLabel = sidebarOpen || isMobile;
 
   const pageProps = {
     students, addStudent, updateStudent, removeStudent,
@@ -1447,13 +1463,65 @@ function AuthenticatedApp() {
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
         button:hover { filter: brightness(1.1); }
+        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 24px; }
+        @media (max-width: 640px) {
+          .grid-2col { grid-template-columns: 1fr !important; }
+          .modal-header { padding: 14px 16px !important; }
+          .modal-body { padding: 16px !important; }
+        }
       `}</style>
 
+      {/* Overlay mobile */}
+      {isMobile && mobileNavOpen && (
+        <div onClick={() => setMobileNavOpen(false)} style={{
+          position: "fixed", inset: 0, background: "#00000080", zIndex: 199
+        }} />
+      )}
+
+      {/* Barra superior mobile */}
+      {isMobile && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, height: 56,
+          background: "#0d1526", borderBottom: "1px solid #1e293b",
+          display: "flex", alignItems: "center", padding: "0 16px", gap: 12, zIndex: 100,
+        }}>
+          <button onClick={() => setMobileNavOpen(true)} style={{
+            background: "none", border: "none", cursor: "pointer", color: "#94a3b8",
+            padding: 6, display: "flex", alignItems: "center", borderRadius: 8,
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M3 12h18 M3 6h18 M3 18h18" />
+            </svg>
+          </button>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+            background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+            PATRIOTA <span style={{ color: "#475569", fontWeight: 400, fontSize: 11 }}>Fight Team</span>
+          </span>
+        </div>
+      )}
+
       {/* Sidebar */}
-      <div style={{
+      <div style={isMobile ? {
+        position: "fixed", top: 0, left: 0, bottom: 0, width: 240,
+        background: "#0d1526", borderRight: "1px solid #1e293b",
+        display: "flex", flexDirection: "column",
+        transform: mobileNavOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.25s ease",
+        zIndex: 200, overflowX: "hidden",
+      } : {
         width: sidebarOpen ? 220 : 64, background: "#0d1526", borderRight: "1px solid #1e293b",
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
-        transition: "width 0.2s", flexShrink: 0, overflowX: "hidden"
+        transition: "width 0.2s", flexShrink: 0, overflowX: "hidden",
       }}>
         <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
@@ -1464,7 +1532,7 @@ function AuthenticatedApp() {
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
             </svg>
           </div>
-          {sidebarOpen && (
+          {showLabel && (
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>PATRIOTA</div>
               <div style={{ fontSize: 10, color: "#475569", marginTop: -1 }}>Fight Team</div>
@@ -1476,7 +1544,7 @@ function AuthenticatedApp() {
           {navItems.map(item => {
             const active = page === item.key;
             return (
-              <button key={item.key} onClick={() => setPage(item.key)} title={!sidebarOpen ? item.label : ""} style={{
+              <button key={item.key} onClick={() => navigate(item.key)} title={!showLabel ? item.label : ""} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 10,
                 padding: "10px 10px", borderRadius: 8, border: "none", cursor: "pointer",
                 background: active ? "#38bdf818" : "transparent",
@@ -1488,37 +1556,43 @@ function AuthenticatedApp() {
                 onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; } }}
               >
                 <div style={{ flexShrink: 0 }}><Icon d={icons[item.icon]} size={18} /></div>
-                {sidebarOpen && item.label}
-                {active && sidebarOpen && <div style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "#38bdf8" }} />}
+                {showLabel && item.label}
+                {active && showLabel && <div style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "#38bdf8" }} />}
               </button>
             );
           })}
         </nav>
 
         <div style={{ padding: "12px 8px", borderTop: "1px solid #1e293b" }}>
-          <button onClick={() => setSidebarOpen(p => !p)} style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-            borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
-            color: "#475569", fontFamily: "inherit", fontSize: 12, marginBottom: 6, whiteSpace: "nowrap"
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d={sidebarOpen ? "M19 12H5 M12 5l-7 7 7 7" : "M5 12h14 M12 5l7 7-7 7"} />
-            </svg>
-            {sidebarOpen && "Recolher"}
-          </button>
+          {!isMobile && (
+            <button onClick={() => setSidebarOpen(p => !p)} style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+              borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
+              color: "#475569", fontFamily: "inherit", fontSize: 12, marginBottom: 6, whiteSpace: "nowrap"
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d={sidebarOpen ? "M19 12H5 M12 5l-7 7 7 7" : "M5 12h14 M12 5l7 7-7 7"} />
+              </svg>
+              {sidebarOpen && "Recolher"}
+            </button>
+          )}
           <button onClick={() => supabase.auth.signOut()} style={{
             width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
             borderRadius: 8, border: "none", cursor: "pointer", background: "transparent",
             color: "#475569", fontFamily: "inherit", fontSize: 12, whiteSpace: "nowrap"
           }}>
             <Icon d={icons.logout} size={18} />
-            {sidebarOpen && "Sair"}
+            {showLabel && "Sair"}
           </button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main style={{ flex: 1, padding: "28px 32px", minWidth: 0, overflow: "auto" }}>
+      {/* Conteúdo principal */}
+      <main style={{
+        flex: 1,
+        padding: isMobile ? "72px 16px 32px" : "28px 32px",
+        minWidth: 0, overflow: "auto",
+      }}>
         {pages[page] || <div>Página não encontrada</div>}
       </main>
     </div>

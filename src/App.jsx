@@ -70,21 +70,30 @@ const useToast = () => useContext(ToastContext);
 function ToastContainer({ toasts }) {
   if (!toasts.length) return null;
   return (
-    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 3000, display: "flex", flexDirection: "column-reverse", gap: 8, maxWidth: 360, width: "calc(100vw - 48px)" }}>
-      {toasts.map(t => (
-        <div key={t.id} style={{
-          background: "#1e293b",
-          borderLeft: `3px solid ${t.type === "error" ? "#ef4444" : t.type === "success" ? "#22c55e" : "#38bdf8"}`,
-          border: `1px solid ${t.type === "error" ? "#ef444444" : t.type === "success" ? "#22c55e44" : "#334155"}`,
-          borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#e2e8f0",
-          boxShadow: "0 8px 32px #00000066", display: "flex", alignItems: "center", gap: 10,
-        }}>
-          <span style={{ color: t.type === "error" ? "#ef4444" : t.type === "success" ? "#22c55e" : "#38bdf8", flexShrink: 0 }}>
-            {t.type === "error" ? "✕" : "✓"}
-          </span>
-          {t.message}
-        </div>
-      ))}
+    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 3000, display: "flex", flexDirection: "column-reverse", gap: 10, maxWidth: 360, width: "calc(100vw - 48px)" }}>
+      {toasts.map(t => {
+        const accent = t.type === "error" ? "#ef4444" : t.type === "success" ? "#22c55e" : "#38bdf8";
+        return (
+          <div key={t.id} className="toast-enter" style={{
+            background: "rgba(15,23,42,0.95)",
+            border: `1px solid ${accent}33`,
+            borderRadius: 12, padding: "13px 16px", fontSize: 13, color: "#e2e8f0",
+            boxShadow: `0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px ${accent}22`,
+            display: "flex", alignItems: "center", gap: 10,
+            backdropFilter: "blur(12px)",
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+              background: accent + "22", border: `1px solid ${accent}44`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 700, color: accent
+            }}>
+              {t.type === "error" ? "✕" : "✓"}
+            </div>
+            <span style={{ lineHeight: 1.4 }}>{t.message}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -233,37 +242,66 @@ const Card = ({ children, style = {} }) => (
 );
 
 const StatCard = ({ label, value, sub, icon, color = "#38bdf8" }) => (
-  <Card style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+  <div style={{
+    background: "#1e293b", borderRadius: 14, padding: "20px 22px",
+    border: "1px solid #334155", borderTop: `2px solid ${color}`,
+    display: "flex", alignItems: "flex-start", gap: 16, position: "relative", overflow: "hidden",
+  }}>
     <div style={{
-      width: 48, height: 48, borderRadius: 12, background: color + "22",
-      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+      position: "absolute", top: -24, right: -24, width: 80, height: 80,
+      background: color + "18", borderRadius: "50%", filter: "blur(20px)", pointerEvents: "none",
+    }} />
+    <div style={{
+      width: 48, height: 48, borderRadius: 12,
+      background: `linear-gradient(135deg, ${color}28, ${color}12)`,
+      border: `1px solid ${color}30`,
+      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
     }}>
       <Icon d={icons[icon] || icons.dashboard} size={22} color={color} />
     </div>
-    <div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: "#f1f5f9", lineHeight: 1.1 }}>{value}</div>
-      <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 2 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: color, marginTop: 4 }}>{sub}</div>}
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        fontSize: 28, fontWeight: 900, lineHeight: 1.1,
+        background: "linear-gradient(135deg, #f1f5f9 30%, #94a3b8 100%)",
+        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+        fontVariantNumeric: "tabular-nums",
+      }}>{value}</div>
+      <div style={{ fontSize: 12, color: "#64748b", marginTop: 3, fontWeight: 500 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color, marginTop: 5, fontWeight: 600 }}>{sub}</div>}
     </div>
-  </Card>
+  </div>
 );
 
 const Btn = ({ onClick, children, variant = "primary", size = "md", style = {}, disabled = false }) => {
+  const [hovered, setHovered] = useState(false);
   const base = {
     border: "none", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
     fontWeight: 700, fontFamily: "inherit", display: "inline-flex", alignItems: "center",
-    gap: 6, transition: "all 0.15s", opacity: disabled ? 0.5 : 1,
-    padding: size === "sm" ? "6px 14px" : size === "lg" ? "12px 28px" : "9px 20px",
+    gap: 6, transition: "all 0.18s cubic-bezier(0.16,1,0.3,1)", opacity: disabled ? 0.5 : 1,
+    padding: size === "sm" ? "6px 14px" : size === "lg" ? "13px 28px" : "9px 20px",
     fontSize: size === "sm" ? 12 : 14,
   };
   const variants = {
-    primary: { background: "#38bdf8", color: "#0f172a" },
-    danger: { background: "#ef444422", color: "#ef4444", border: "1px solid #ef444433" },
-    ghost: { background: "transparent", color: "#94a3b8", border: "1px solid #334155" },
-    success: { background: "#22c55e22", color: "#22c55e", border: "1px solid #22c55e33" },
+    primary: {
+      background: "linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%)",
+      color: "#0a0f1e", fontWeight: 800,
+      boxShadow: hovered ? "0 6px 24px rgba(56,189,248,0.4)" : "0 2px 10px rgba(56,189,248,0.2)",
+      transform: hovered && !disabled ? "translateY(-1px)" : "translateY(0)",
+    },
+    danger: { background: hovered ? "#ef444430" : "#ef444418", color: "#ef4444", border: "1px solid #ef444433" },
+    ghost: {
+      background: hovered ? "#ffffff0d" : "transparent",
+      color: hovered ? "#e2e8f0" : "#94a3b8", border: "1px solid #334155",
+    },
+    success: { background: hovered ? "#22c55e30" : "#22c55e18", color: "#22c55e", border: "1px solid #22c55e33" },
   };
   return (
-    <button onClick={disabled ? undefined : onClick} style={{ ...base, ...variants[variant], ...style }}>
+    <button
+      onClick={disabled ? undefined : onClick}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ ...base, ...variants[variant], ...style }}
+    >
       {children}
     </button>
   );
@@ -271,11 +309,12 @@ const Btn = ({ onClick, children, variant = "primary", size = "md", style = {}, 
 
 const Input = ({ label, value, onChange, type = "text", options, placeholder, required }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-    {label && <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}{required && " *"}</label>}
+    {label && <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}{required && <span style={{ color: "#38bdf8", marginLeft: 2 }}>*</span>}</label>}
     {options ? (
       <select value={value} onChange={e => onChange(e.target.value)} style={{
-        background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px",
-        color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none"
+        background: "#0d1829", border: "1px solid #2d3f5e", borderRadius: 10, padding: "10px 14px",
+        color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none",
+        transition: "border-color 0.15s, box-shadow 0.15s", cursor: "pointer",
       }}>
         <option value="">Selecionar...</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -283,8 +322,9 @@ const Input = ({ label, value, onChange, type = "text", options, placeholder, re
     ) : (
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{
-          background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px",
-          color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none"
+          background: "#0d1829", border: "1px solid #2d3f5e", borderRadius: 10, padding: "10px 14px",
+          color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none",
+          transition: "border-color 0.15s, box-shadow 0.15s",
         }} />
     )}
   </div>
@@ -292,17 +332,24 @@ const Input = ({ label, value, onChange, type = "text", options, placeholder, re
 
 const Modal = ({ title, onClose, children, width = 560 }) => (
   <div style={{
-    position: "fixed", inset: 0, background: "#00000099", zIndex: 1000,
-    display: "flex", alignItems: "center", justifyContent: "center", padding: 16
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 1000,
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    backdropFilter: "blur(6px)",
   }} onClick={onClose}>
-    <div onClick={e => e.stopPropagation()} style={{
-      background: "#1e293b", border: "1px solid #334155", borderRadius: 16,
-      width: "100%", maxWidth: width, maxHeight: "92vh", overflow: "auto"
+    <div onClick={e => e.stopPropagation()} className="modal-enter" style={{
+      background: "#1a2540", border: "1px solid #2d3f5e", borderRadius: 20,
+      width: "100%", maxWidth: width, maxHeight: "92vh", overflow: "auto",
+      boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)",
     }}>
-      <div className="modal-header">
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#f1f5f9" }}>{title}</h3>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", flexShrink: 0 }}>
-          <Icon d={icons.close} size={20} />
+      <div className="modal-header" style={{ borderBottom: "1px solid #243049" }}>
+        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#f1f5f9", letterSpacing: "0.01em" }}>{title}</h3>
+        <button onClick={onClose} style={{
+          background: "#0f172a", border: "1px solid #334155", borderRadius: 8,
+          cursor: "pointer", color: "#64748b", flexShrink: 0,
+          padding: "5px", display: "flex", alignItems: "center", lineHeight: 1,
+          transition: "all 0.15s"
+        }}>
+          <Icon d={icons.close} size={15} />
         </button>
       </div>
       <div className="modal-body">{children}</div>
@@ -340,36 +387,49 @@ function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0, empty
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
-          <tr>
+          <tr style={{ background: "#0f172a" }}>
             {cols.map(c => (
               <th key={c.key} onClick={() => toggleSort(c)} style={{
-                textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b",
-                textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #334155",
+                textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#475569",
+                textTransform: "uppercase", letterSpacing: "0.07em", borderBottom: "1px solid #243049",
                 cursor: c.sortable === false ? "default" : "pointer", userSelect: "none", whiteSpace: "nowrap",
+                position: "sticky", top: 0, background: "#0f172a", zIndex: 5,
               }}>
                 {c.label}
-                {sortKey === c.key && <span style={{ marginLeft: 4, color: "#38bdf8" }}>{sortDir === "asc" ? "↑" : "↓"}</span>}
+                {sortKey === c.key && (
+                  <span style={{ marginLeft: 4, color: "#38bdf8", fontSize: 13 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
+                )}
               </th>
             ))}
-            <th style={{ textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #334155" }}>Ações</th>
+            <th style={{
+              textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 700, color: "#475569",
+              textTransform: "uppercase", borderBottom: "1px solid #243049",
+              position: "sticky", top: 0, background: "#0f172a", zIndex: 5,
+            }}>Ações</th>
           </tr>
         </thead>
         <tbody>
           {displayed.length === 0 ? (
-            <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: "40px 20px", color: "#475569" }}>
-              <div style={{ fontSize: 14 }}>Nenhum registro encontrado</div>
-              {emptyAction && <div style={{ marginTop: 14 }}>{emptyAction}</div>}
+            <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: "56px 20px", color: "#334155" }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#475569" }}>Nenhum registro encontrado</div>
+              {emptyAction && <div style={{ marginTop: 16 }}>{emptyAction}</div>}
             </td></tr>
           ) : displayed.map((row, i) => (
-            <tr key={row.id || i} style={{ borderBottom: "1px solid #1e293b", transition: "background 0.1s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#ffffff08"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <tr key={row.id || i} style={{
+              borderBottom: "1px solid #1a2540",
+              background: i % 2 !== 0 ? "rgba(255,255,255,0.016)" : "transparent",
+              transition: "background 0.12s",
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(56,189,248,0.04)"}
+              onMouseLeave={e => e.currentTarget.style.background = i % 2 !== 0 ? "rgba(255,255,255,0.016)" : "transparent"}
+            >
               {cols.map(c => (
-                <td key={c.key} style={{ padding: "12px 16px", fontSize: 14, color: "#e2e8f0" }}>
+                <td key={c.key} style={{ padding: "11px 16px", fontSize: 14, color: "#cbd5e1" }}>
                   {c.render ? c.render(row[c.key], row) : row[c.key]}
                 </td>
               ))}
-              <td style={{ padding: "12px 16px", textAlign: "right" }}>
+              <td style={{ padding: "11px 16px", textAlign: "right" }}>
                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                   {extraActions && extraActions(row)}
                   {onEdit && <Btn onClick={() => onEdit(row)} variant="ghost" size="sm"><Icon d={icons.edit} size={14} />Editar</Btn>}
@@ -381,11 +441,11 @@ function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0, empty
         </tbody>
       </table>
       {pageSize > 0 && totalPages > 1 && (
-        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #1e293b" }}>
-          <span style={{ fontSize: 12, color: "#64748b" }}>{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)} de {sorted.length}</span>
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #1a2540" }}>
+          <span style={{ fontSize: 12, color: "#475569" }}>{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)} de {sorted.length}</span>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <Btn onClick={() => setPage(p => Math.max(0, p - 1))} variant="ghost" size="sm" disabled={safePage === 0}>← Anterior</Btn>
-            <span style={{ fontSize: 13, color: "#64748b", padding: "0 8px" }}>{safePage + 1}/{totalPages}</span>
+            <span style={{ fontSize: 12, color: "#475569", padding: "0 8px" }}>{safePage + 1} / {totalPages}</span>
             <Btn onClick={() => setPage(p => p + 1)} variant="ghost" size="sm" disabled={safePage >= totalPages - 1}>Próximo →</Btn>
           </div>
         </div>
@@ -398,20 +458,32 @@ function Table({ cols, rows, onEdit, onDelete, extraActions, pageSize = 0, empty
 function LoadingScreen() {
   return (
     <div style={{
-      minHeight: "100vh", background: "#0f172a", display: "flex", alignItems: "center",
-      justifyContent: "center", fontFamily: "'Barlow', sans-serif", flexDirection: "column", gap: 16
+      minHeight: "100vh", background: "#080e1c", display: "flex", alignItems: "center",
+      justifyContent: "center", fontFamily: "'Barlow', sans-serif", flexDirection: "column", gap: 32
     }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;700;900&display=swap');`}</style>
-      <div style={{
-        width: 56, height: 56, borderRadius: 14, background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
-        display: "flex", alignItems: "center", justifyContent: "center"
-      }}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;700;900&display=swap');
+        @keyframes spin-ring { to { transform: rotate(360deg); } }
+        @keyframes pulse-logo { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.75; transform:scale(0.95); } }
+        .spin-ring { animation: spin-ring 1.2s linear infinite; transform-origin: center; }
+        .pulse-logo { animation: pulse-logo 2.4s ease-in-out infinite; }
+      `}</style>
+      <div style={{ position: "relative", width: 104, height: 104, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg className="spin-ring" width="104" height="104" viewBox="0 0 104 104" fill="none" style={{ position: "absolute", inset: 0 }}>
+          <circle cx="52" cy="52" r="48" stroke="#1e293b" strokeWidth="3" />
+          <circle cx="52" cy="52" r="48" stroke="url(#ring-grad)" strokeWidth="3" strokeDasharray="76 225" strokeLinecap="round" />
+          <defs>
+            <linearGradient id="ring-grad" x1="0" y1="0" x2="104" y2="104" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#38bdf8" /><stop offset="1" stopColor="#818cf8" />
+            </linearGradient>
+          </defs>
         </svg>
+        <img className="pulse-logo" src="/logo.png" alt="Patriota" style={{ width: 68, height: 68, objectFit: "contain" }} />
       </div>
-      <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700, letterSpacing: "0.1em" }}>CARREGANDO...</div>
-      <div style={{ color: "#475569", fontSize: 12 }}>Conectando ao banco de dados</div>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ color: "#f1f5f9", fontSize: 13, fontWeight: 700, letterSpacing: "0.18em", fontFamily: "'Barlow', sans-serif" }}>CARREGANDO</div>
+        <div style={{ color: "#334155", fontSize: 12, marginTop: 6 }}>Conectando ao banco de dados...</div>
+      </div>
     </div>
   );
 }
@@ -454,43 +526,66 @@ function LoginScreen() {
 
   return (
     <div style={{
-      minHeight: "100vh", background: "#0f172a", display: "flex", alignItems: "center",
-      justifyContent: "center", fontFamily: "'Barlow', sans-serif"
+      minHeight: "100vh",
+      background: "linear-gradient(160deg, #060d1f 0%, #0a1220 50%, #0d1628 100%)",
+      display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Barlow', sans-serif"
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800;900&family=Barlow+Condensed:wght@700;800;900&display=swap');
         * { box-sizing: border-box; }
-        input:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 3px #38bdf822 !important; }
-        select:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 3px #38bdf822 !important; }
+        @keyframes fadeInUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes floatLogo { 0%,100% { transform:translateY(0) scale(1); filter:drop-shadow(0 8px 32px #38bdf840); } 50% { transform:translateY(-10px) scale(1.03); filter:drop-shadow(0 16px 48px #38bdf860); } }
+        @keyframes orb1 { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(30px,-20px) scale(1.1); } }
+        @keyframes orb2 { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(-20px,30px) scale(0.9); } }
+        .login-card { animation: fadeInUp 0.5s cubic-bezier(0.16,1,0.3,1); }
+        .login-logo { animation: floatLogo 6s ease-in-out infinite; }
+        .orb1 { animation: orb1 8s ease-in-out infinite; }
+        .orb2 { animation: orb2 10s ease-in-out infinite; }
+        input:focus, select:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 3px #38bdf820 !important; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
       `}</style>
+
+      {/* Animated background orbs */}
       <div style={{ position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-        <div style={{ position: "absolute", top: -200, right: -200, width: 600, height: 600, background: "radial-gradient(circle, #38bdf811 0%, transparent 70%)" }} />
-        <div style={{ position: "absolute", bottom: -200, left: -200, width: 500, height: 500, background: "radial-gradient(circle, #0ea5e911 0%, transparent 70%)" }} />
+        <div className="orb1" style={{ position: "absolute", top: "8%", right: "8%", width: 500, height: 500, background: "radial-gradient(circle, #38bdf81a 0%, transparent 65%)", filter: "blur(48px)" }} />
+        <div className="orb2" style={{ position: "absolute", bottom: "8%", left: "5%", width: 400, height: 400, background: "radial-gradient(circle, #818cf812 0%, transparent 65%)", filter: "blur(48px)" }} />
+        <div style={{ position: "absolute", top: "45%", left: "45%", width: 250, height: 250, background: "radial-gradient(circle, #0ea5e90a 0%, transparent 70%)" }} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 420, padding: 20, position: "relative" }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <img src="/logo.png" alt="Patriota Fight Team" style={{ width: 120, height: 120, objectFit: "contain", margin: "0 auto 8px", display: "block" }} />
+      <div className="login-card" style={{ width: "100%", maxWidth: 400, padding: 24, position: "relative" }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <img src="/logo.png" alt="Patriota Fight Team" className="login-logo"
+            style={{ width: 148, height: 148, objectFit: "contain", margin: "0 auto 16px", display: "block" }} />
+          <div style={{ fontSize: 10, color: "#334155", letterSpacing: "0.22em", textTransform: "uppercase", fontWeight: 700 }}>
+            Sistema de Gestão · v1.0
+          </div>
         </div>
 
-        <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        <div style={{
+          background: "rgba(26, 37, 64, 0.85)", backdropFilter: "blur(24px) saturate(1.5)",
+          border: "1px solid rgba(45,63,94,0.8)", borderRadius: 20, padding: 32,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)",
+        }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}
             onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}>
             <Input label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@academia.com" />
             <Input label="Senha" type="password" value={pass} onChange={setPass} placeholder="••••••••" />
             {err && (
-              <div style={{ background: "#ef444422", border: "1px solid #ef444433", borderRadius: 8, padding: "10px 14px", color: "#ef4444", fontSize: 13 }}>
-                {err}
+              <div style={{ background: "#ef444418", border: "1px solid #ef444430", borderRadius: 10, padding: "10px 14px", color: "#ef4444", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon d={icons.alert} size={14} color="#ef4444" />{err}
               </div>
             )}
             <Btn onClick={handleLogin} size="lg" style={{ width: "100%", justifyContent: "center", marginTop: 4 }} disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}
             </Btn>
           </div>
-        </Card>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 24, color: "#243049", fontSize: 11, letterSpacing: "0.04em" }}>
+          © 2025 Patriota Fight Team · Centro de Treinamento
+        </div>
       </div>
     </div>
   );
@@ -2046,17 +2141,27 @@ function AuthenticatedApp() {
 
   return (
     <ToastContext.Provider value={addToast}>
-    <div style={{ minHeight: "100vh", background: "#0f172a", fontFamily: "'Barlow', sans-serif", color: "#e2e8f0", display: "flex" }}>
+    <div style={{ minHeight: "100vh", background: "#080e1c", fontFamily: "'Barlow', sans-serif", color: "#e2e8f0", display: "flex" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;800;900&display=swap');
         * { box-sizing: border-box; }
-        input:focus, select:focus, textarea:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 3px #38bdf822 !important; outline: none; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes slideUp { from { opacity:0; transform:translateY(22px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+        @keyframes slideInRight { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+        @keyframes spin-ring { to { transform: rotate(360deg); } }
+        @keyframes pulse-logo { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.75; transform:scale(0.95); } }
+        .page-enter { animation: fadeIn 0.22s cubic-bezier(0.16,1,0.3,1); }
+        .modal-enter { animation: slideUp 0.26s cubic-bezier(0.16,1,0.3,1); }
+        .toast-enter { animation: slideInRight 0.3s cubic-bezier(0.16,1,0.3,1); }
+        .spin-ring { animation: spin-ring 1.2s linear infinite; transform-origin: center; }
+        .pulse-logo { animation: pulse-logo 2.4s ease-in-out infinite; }
+        input:focus, select:focus, textarea:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 3px #38bdf820 !important; outline: none; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        button:hover { filter: brightness(1.1); }
+        ::-webkit-scrollbar-track { background: #0a0f1e; }
+        ::-webkit-scrollbar-thumb { background: #243049; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2d3f5e; }
         .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .modal-header { padding: 20px 24px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #243049; display: flex; justify-content: space-between; align-items: center; }
         .modal-body { padding: 24px; }
         @media (max-width: 640px) {
           .grid-2col { grid-template-columns: 1fr !important; }
@@ -2087,15 +2192,7 @@ function AuthenticatedApp() {
               <path d="M3 12h18 M3 6h18 M3 18h18" />
             </svg>
           </button>
-          <div style={{
-            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-            background: "linear-gradient(135deg, #38bdf8, #0ea5e9)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Patriota" style={{ width: 34, height: 34, objectFit: "contain", flexShrink: 0 }} />
           <span style={{ fontSize: 15, fontWeight: 900, color: "#f1f5f9", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
             PATRIOTA <span style={{ color: "#475569", fontWeight: 400, fontSize: 11 }}>Fight Team</span>
           </span>
@@ -2105,13 +2202,13 @@ function AuthenticatedApp() {
       {/* Sidebar */}
       <div style={isMobile ? {
         position: "fixed", top: 0, left: 0, bottom: 0, width: 240,
-        background: "#0d1526", borderRight: "1px solid #1e293b",
+        background: "#060c1a", borderRight: "1px solid #1a2540",
         display: "flex", flexDirection: "column",
         transform: mobileNavOpen ? "translateX(0)" : "translateX(-100%)",
         transition: "transform 0.25s ease",
         zIndex: 200, overflowX: "hidden",
       } : {
-        width: sidebarOpen ? 220 : 64, background: "#0d1526", borderRight: "1px solid #1e293b",
+        width: sidebarOpen ? 220 : 64, background: "#060c1a", borderRight: "1px solid #1a2540",
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
         transition: "width 0.2s", flexShrink: 0, overflowX: "hidden",
       }}>
@@ -2131,18 +2228,19 @@ function AuthenticatedApp() {
             return (
               <button key={item.key} onClick={() => navigate(item.key)} title={!showLabel ? item.label : ""} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 10,
-                padding: "10px 10px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: active ? "#38bdf818" : "transparent",
-                color: active ? "#38bdf8" : "#64748b",
+                padding: "9px 10px", borderRadius: 9, border: "none", cursor: "pointer",
+                background: active ? "linear-gradient(90deg, #38bdf814 0%, #38bdf806 100%)" : "transparent",
+                color: active ? "#38bdf8" : "#4e6280",
                 fontFamily: "inherit", fontSize: 13, fontWeight: active ? 700 : 500,
-                marginBottom: 2, textAlign: "left", transition: "all 0.15s", whiteSpace: "nowrap"
+                marginBottom: 2, textAlign: "left", transition: "all 0.15s", whiteSpace: "nowrap",
+                boxShadow: active ? "inset 3px 0 0 #38bdf8" : "none",
               }}
-                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = "#ffffff08"; e.currentTarget.style.color = "#94a3b8"; } }}
-                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; } }}
+                onMouseEnter={e => { if (!active) { e.currentTarget.style.background = "#ffffff08"; e.currentTarget.style.color = "#7a9cbf"; } }}
+                onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4e6280"; } }}
               >
                 <div style={{ flexShrink: 0 }}><Icon d={icons[item.icon]} size={18} /></div>
                 {showLabel && item.label}
-                {active && showLabel && <div style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "#38bdf8" }} />}
+                {active && showLabel && <div style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "#38bdf8", boxShadow: "0 0 8px #38bdf8" }} />}
               </button>
             );
           })}
@@ -2186,7 +2284,9 @@ function AuthenticatedApp() {
         padding: isMobile ? "72px 16px 32px" : "28px 32px",
         minWidth: 0, overflow: "auto",
       }}>
-        {pages[page] || <div>Página não encontrada</div>}
+        <div key={page} className="page-enter">
+          {pages[page] || <div>Página não encontrada</div>}
+        </div>
       </main>
 
       {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
